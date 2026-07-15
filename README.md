@@ -21,6 +21,8 @@ Construir un pipeline analítico reproducible que transforme datos oficiales de 
 - visualizar resultados mediante Power BI;
 - mantener trazabilidad, controles de calidad y documentación técnica.
 
+El MVP permitirá analizar los años completos 2024 y 2025, así como el comportamiento de 2026 hasta el último periodo mensual disponible, utilizando comparaciones YTD para garantizar equivalencia temporal.
+
 ## Usuarios objetivo
 
 La solución está dirigida principalmente a:
@@ -34,7 +36,8 @@ La solución está dirigida principalmente a:
 
 El MVP contempla inicialmente:
 
-- datos mensuales de ejecución presupuestal de 2024 y 2025;
+- datos mensuales de ejecución presupuestal correspondientes a los años completos 2024 y 2025, así como a 2026 hasta el último periodo disponible;
+- comparaciones YTD entre 2026 y periodos equivalentes de 2025 y 2024;
 - extracción e ingesta mediante Python;
 - perfilado y validación de calidad;
 - transformación mediante pandas;
@@ -70,3 +73,12 @@ EDA y KPIs
 Power BI y Excel QA
         ↓
 Automatización y documentación
+
+## Próximos pasos
+
+1. Revisar las fuentes oficiales y el diccionario de datos.
+2. Descargar y registrar los archivos fuente del MVP para 2024, 2025 y 2026.
+3. Comparar los esquemas de los tres periodos antes de concatenar los datos.
+4. Realizar el perfilado inicial.
+5. Definir controles de calidad.
+6. Construir el pipeline de transformación y carga.
