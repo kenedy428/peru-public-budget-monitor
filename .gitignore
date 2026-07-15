@@ -1,0 +1,77 @@
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==============================
+# Virtual environments
+# ==============================
+.venv/
+venv/
+env/
+
+# ==============================
+# Environment variables / secrets
+# ==============================
+.env
+.env.*
+!.env.example
+
+# ==============================
+# Jupyter Notebook
+# ==============================
+.ipynb_checkpoints/
+
+# ==============================
+# IDEs and editors
+# ==============================
+.vscode/
+.idea/
+
+# ==============================
+# Operating system files
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Logs
+# ==============================
+*.log
+logs/
+
+# ==============================
+# Raw and processed datasets
+# ==============================
+data/raw/*
+data/processed/*
+data/staging/*
+
+# Keep documentation files inside data folders
+!data/raw/README.md
+!data/processed/README.md
+!data/staging/README.md
+
+# ==============================
+# Database dumps and backups
+# ==============================
+*.sql.gz
+*.dump
+*.backup
+
+# ==============================
+# Power BI temporary files
+# ==============================
+*.pbit.tmp
+
+# ==============================
+# Excel temporary files
+# ==============================
+~$*.xlsx
+~$*.xlsm
