@@ -12,14 +12,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+
 import requests
 import yaml
-
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "sources.yaml"
 CHUNK_SIZE_BYTES = 1024 * 1024  # 1 MB
-
+MAX_RETRIES = 3
+BACKOFF_FACTOR_SECONDS = 1.0
+RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 
 def configure_logging() -> None:
     """Configura mensajes básicos del proceso en consola."""
@@ -28,6 +32,27 @@ def configure_logging() -> None:
         format="%(asctime)s | %(levelname)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    
+def build_session() -> requests.Session:
+    """Crea una sesión HTTP con reintentos ante errores temporales."""
+    retry_strategy = Retry(
+        total=MAX_RETRIES,
+        connect=MAX_RETRIES,
+        read=MAX_RETRIES,
+        status=MAX_RETRIES,
+        backoff_factor=BACKOFF_FACTOR_SECONDS,
+        status_forcelist=RETRY_STATUS_CODES,
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    return session
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -161,26 +186,27 @@ def download_source(
     }
 
     try:
-        with requests.get(
-            download_url,
-            stream=True,
-            timeout=(15, 300),
-            headers=headers,
-        ) as response:
-            response.raise_for_status()
+        with build_session() as session:
+            with session.get(
+                download_url,
+                stream=True,
+                timeout=(15, 300),
+                headers=headers,
+            ) as response:
+                response.raise_for_status()
 
-            content_length = response.headers.get("Content-Length")
-            expected_size = int(content_length) if content_length else None
-            content_type = response.headers.get("Content-Type")
+                content_length = response.headers.get("Content-Length")
+                expected_size = int(content_length) if content_length else None
+                content_type = response.headers.get("Content-Type")
 
-            with temporary_path.open("wb") as file:
-                for chunk in response.iter_content(chunk_size=CHUNK_SIZE_BYTES):
-                    if not chunk:
-                        continue
+                with temporary_path.open("wb") as file:
+                    for chunk in response.iter_content(chunk_size=CHUNK_SIZE_BYTES):
+                        if not chunk:
+                            continue
 
-                    file.write(chunk)
-                    sha256.update(chunk)
-                    bytes_written += len(chunk)
+                        file.write(chunk)
+                        sha256.update(chunk)
+                        bytes_written += len(chunk)
 
         validate_download(
             file_path=temporary_path,
@@ -226,8 +252,43 @@ def download_source(
 
         return manifest
 
-    except Exception:
+    except Exception as error:
         temporary_path.unlink(missing_ok=True)
+
+        failed_at = datetime.now(UTC)
+        runtime_seconds = round(time.perf_counter() - start_time, 3)
+
+        failure_manifest = {
+            "source_id": source_id,
+            "resource_name": resource_name,
+            "resource_type": source.get("resource_type"),
+            "reference_year": source.get("reference_year"),
+            "source_url": source.get("page_url"),
+            "download_url": download_url,
+            "resource_id": source.get("resource_id"),
+            "download_timestamp_utc": failed_at.isoformat(),
+            "local_path": target_path.relative_to(
+                PROJECT_ROOT
+            ).as_posix(),
+            "file_format": file_format,
+            "configured_encoding": source.get("encoding"),
+            "bytes_written_before_failure": bytes_written,
+            "runtime_seconds": runtime_seconds,
+            "mutable_source": source.get("mutable"),
+            "status": "failed",
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "pipeline_version": "0.1.0",
+        }
+
+        manifest_path = write_manifest(
+            failure_manifest,
+            manifest_dir,
+        )
+
+        logging.error("La descarga de %s falló.", resource_name)
+        logging.error("Manifiesto de error: %s", manifest_path)
+
         raise
 
 

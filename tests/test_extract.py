@@ -12,6 +12,25 @@ from src.extract import (
     select_sources,
     validate_download,
 )
+from src.extract import (
+    build_session,
+    calculate_sha256,
+    select_sources,
+    validate_download,
+)
+def test_build_session_configures_retries() -> None:
+    """La sesión debe reintentar errores HTTP temporales."""
+    session = build_session()
+
+    retry_config = session.get_adapter("https://").max_retries
+
+    assert retry_config.total == 3
+    assert 429 in retry_config.status_forcelist
+    assert 500 in retry_config.status_forcelist
+    assert 503 in retry_config.status_forcelist
+    assert "GET" in retry_config.allowed_methods
+
+    session.close()
 
 
 def test_calculate_sha256(tmp_path: Path) -> None:
