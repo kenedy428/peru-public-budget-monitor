@@ -85,6 +85,32 @@ def calculate_sha256(file_path: Path) -> str:
 
     return sha256.hexdigest()
 
+def should_skip_existing(
+    target_path: Path,
+    mutable_source: bool,
+    force: bool,
+) -> bool:
+    """Determina si debe conservarse un archivo existente sin descargarlo."""
+    return target_path.exists() and not mutable_source and not force
+
+
+def determine_download_status(
+    target_existed: bool,
+    previous_hash: str | None,
+    downloaded_hash: str,
+    force: bool,
+) -> str:
+    """Determina el estado final después de comparar la descarga."""
+    if not target_existed:
+        return "success"
+
+    if previous_hash != downloaded_hash:
+        return "updated"
+
+    if force:
+        return "refreshed"
+
+    return "unchanged"
 
 def validate_download(
     file_path: Path,
@@ -146,11 +172,17 @@ def download_source(
 
     target_path = raw_data_dir / resource_name
     temporary_path = target_path.with_suffix(f"{target_path.suffix}.part")
+    mutable_source = bool(source.get("mutable", False))
+    target_existed = target_path.exists()
 
     started_at = datetime.now(UTC)
     start_time = time.perf_counter()
 
-    if target_path.exists() and not force:
+    if should_skip_existing(
+    target_path=target_path,
+    mutable_source=mutable_source,
+    force=force,
+        ):
         logging.info(
             "El archivo %s ya existe. Se conservará la copia local.",
             resource_name,
@@ -175,6 +207,11 @@ def download_source(
         logging.info("Manifiesto generado: %s", manifest_path)
         return manifest
 
+    previous_hash = (
+    calculate_sha256(target_path)
+    if target_existed
+    else None
+)
     logging.info("Descargando %s", resource_name)
     logging.info("URL: %s", download_url)
 
@@ -216,7 +253,20 @@ def download_source(
         )
 
         # Reemplaza el destino únicamente después de validar la descarga.
-        temporary_path.replace(target_path)
+        downloaded_hash = sha256.hexdigest()
+
+        status = determine_download_status(
+            target_existed=target_existed,
+            previous_hash=previous_hash,
+            downloaded_hash=downloaded_hash,
+            force=force,
+        )
+
+        if status == "unchanged":
+            temporary_path.unlink(missing_ok=True)
+        else:
+            # Solo reemplaza el destino después de validar la descarga.
+            temporary_path.replace(target_path)
 
         finished_at = datetime.now(UTC)
         runtime_seconds = round(time.perf_counter() - start_time, 3)
@@ -235,11 +285,17 @@ def download_source(
             "configured_encoding": source.get("encoding"),
             "content_type": content_type,
             "expected_size_bytes": expected_size,
-            "file_size_bytes": bytes_written,
-            "sha256_hash": sha256.hexdigest(),
+            "downloaded_size_bytes": bytes_written,
+            "file_size_bytes": target_path.stat().st_size,
+            "previous_sha256_hash": previous_hash,
+            "sha256_hash": downloaded_hash,
+            "content_changed": (
+                previous_hash is not None
+                and previous_hash != downloaded_hash
+            ),
             "runtime_seconds": runtime_seconds,
-            "mutable_source": source.get("mutable"),
-            "status": "success",
+            "mutable_source": mutable_source,
+            "status": status,
             "pipeline_version": "0.1.0",
         }
 
@@ -247,7 +303,8 @@ def download_source(
 
         logging.info("Descarga completada: %s", target_path)
         logging.info("Tamaño: %s bytes", bytes_written)
-        logging.info("SHA-256: %s", sha256.hexdigest())
+        logging.info("Estado: %s", status)
+        logging.info("SHA-256: %s", downloaded_hash)
         logging.info("Manifiesto: %s", manifest_path)
 
         return manifest

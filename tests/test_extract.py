@@ -18,6 +18,17 @@ from src.extract import (
     select_sources,
     validate_download,
 )
+
+from src.extract import (
+    build_session,
+    calculate_sha256,
+    determine_download_status,
+    select_sources,
+    should_skip_existing,
+    validate_download,
+)
+
+
 def test_build_session_configures_retries() -> None:
     """La sesión debe reintentar errores HTTP temporales."""
     session = build_session()
@@ -152,3 +163,59 @@ def test_select_sources_rejects_unknown_source() -> None:
             source_id="unknown_source",
             download_all=False,
         )
+        
+def test_should_skip_existing_respects_mutability(
+    tmp_path: Path,
+) -> None:
+    """Solo las fuentes inmutables existentes deben omitirse."""
+    file_path = tmp_path / "source.csv"
+    file_path.write_text("a,b\n1,2\n", encoding="utf-8")
+
+    assert should_skip_existing(
+        target_path=file_path,
+        mutable_source=False,
+        force=False,
+    )
+
+    assert not should_skip_existing(
+        target_path=file_path,
+        mutable_source=True,
+        force=False,
+    )
+
+    assert not should_skip_existing(
+        target_path=file_path,
+        mutable_source=False,
+        force=True,
+    )
+
+
+def test_determine_download_status() -> None:
+    """El estado debe reflejar la existencia y el cambio del archivo."""
+    assert determine_download_status(
+        target_existed=False,
+        previous_hash=None,
+        downloaded_hash="new_hash",
+        force=False,
+    ) == "success"
+
+    assert determine_download_status(
+        target_existed=True,
+        previous_hash="same_hash",
+        downloaded_hash="same_hash",
+        force=False,
+    ) == "unchanged"
+
+    assert determine_download_status(
+        target_existed=True,
+        previous_hash="old_hash",
+        downloaded_hash="new_hash",
+        force=False,
+    ) == "updated"
+
+    assert determine_download_status(
+        target_existed=True,
+        previous_hash="same_hash",
+        downloaded_hash="same_hash",
+        force=True,
+    ) == "refreshed"
