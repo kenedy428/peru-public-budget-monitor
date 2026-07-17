@@ -64,7 +64,7 @@ Estas preguntas podrán ser ajustadas después de revisar el diccionario oficial
 
 El Minimum Viable Product incluirá inicialmente:
 
-- Datos oficiales de devengado mensual del MEF correspondientes a 2024 y 2025.
+- Datos oficiales de devengado mensual del MEF correspondientes a los años completos 2024 y 2025, así como al año 2026 hasta el último periodo mensual disponible en la fuente oficial.
 - Proceso reproducible de extracción o ingesta.
 - Registro de metadatos de la fuente y hash SHA-256.
 - Perfilado de datos y comparación de esquemas.
@@ -79,6 +79,8 @@ El Minimum Viable Product incluirá inicialmente:
 - Validación y reconciliación mediante Excel.
 - Pruebas unitarias y validaciones SQL.
 - Documentación profesional en GitHub.
+
+Para las comparaciones que involucren 2026 se utilizarán periodos equivalentes YTD, evitando comparar un año en curso contra años completos.
 
 ---
 
@@ -103,7 +105,7 @@ Estos elementos solo podrán reconsiderarse cuando el pipeline principal esté c
 El MVP será considerado satisfactorio cuando:
 
 - La fuente oficial y su diccionario de datos estén correctamente documentados.
-- Los datos de 2024 y 2025 puedan procesarse sin ajustes manuales ocultos.
+- Los datos de 2024, 2025 y 2026 hasta el último periodo disponible puedan procesarse sin ajustes manuales ocultos.
 - El pipeline registre metadatos de la fuente y resultados de calidad.
 - Los errores críticos de calidad detengan la carga correspondiente.
 - Los principales totales y conteos sean reconciliados contra las fuentes originales.
