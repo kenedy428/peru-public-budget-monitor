@@ -120,7 +120,7 @@ def write_manifest(manifest: dict[str, Any], manifest_dir: Path) -> Path:
     """Guarda el manifiesto JSON de una ejecución."""
     manifest_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     source_id = manifest["source_id"]
     manifest_path = manifest_dir / f"{timestamp}_{source_id}.json"
 
