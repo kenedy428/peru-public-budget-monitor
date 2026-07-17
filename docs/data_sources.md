@@ -158,18 +158,57 @@ La fuente oficial presenta potencialmente los siguientes mecanismos de acceso:
 1. Descarga directa de archivos CSV.
 2. API de datos del portal basada en CKAN.
 
-La estrategia definitiva de extracción todavía no ha sido seleccionada.
+### Prueba técnica de acceso
 
-Antes de tomar la decisión se evaluarán:
+El 16 de julio de 2026 se realizó una prueba controlada utilizando el recurso `Gasto_Devengado_Diccionario.csv`.
 
-- estabilidad del mecanismo;
-- facilidad de automatización;
-- tamaño de los archivos;
-- posibilidad de descarga completa;
-- límites de consulta;
-- reproducibilidad;
-- mantenibilidad del pipeline.
+#### Descarga directa
 
+La descarga directa permitió obtener el archivo CSV completo mediante una sola solicitud.
+
+Resultados obtenidos:
+
+- Tamaño descargado: 6,841 bytes.
+- Registros de datos: 73.
+- Filas físicas: 74, incluyendo la cabecera.
+- Tipo detectado: `text/csv`.
+- Codificación detectada: UTF-8.
+- El archivo contiene una marca BOM al inicio del primer encabezado.
+- Para su lectura correcta en Python se deberá utilizar `encoding="utf-8-sig"` o eliminar explícitamente el BOM.
+- Hash SHA-256:
+
+`04d5bc96a55612458100fc7addf9368537954804dca101bdf42a5e485f2c5947`
+
+En el entorno Windows utilizado para la prueba, `curl` necesitó la opción `--ssl-revoke-best-effort` debido a una limitación de Schannel al comprobar la revocación del certificado.
+
+#### API oficial
+
+La API oficial fue probada mediante el endpoint:
+
+`https://api.datosabiertos.mef.gob.pe/DatosAbiertos/v1/datastore_search`
+
+La consulta utilizó el Resource ID:
+
+`d2aca9ca-2820-425e-826b-ee3a7a81c113`
+
+Resultados obtenidos:
+
+- Tipo de respuesta: `application/json`.
+- Codificación: UTF-8.
+- Registros recuperados: 73.
+- Las variables obtenidas mediante la API coinciden con las del CSV.
+- El contenido completo de los 73 registros resultó equivalente entre ambos mecanismos.
+- La respuesta incluye información de navegación mediante el campo `next`.
+- El archivo JSON resultó mayor que el CSV debido a que repite los nombres de los campos y agrega metadatos de consulta.
+
+### Estrategia seleccionada
+
+Para el MVP se utilizará:
+
+- **Descarga directa de CSV como mecanismo principal de ingesta**, especialmente para los archivos anuales que contienen millones de registros.
+- **API como mecanismo complementario**, destinado a consultas pequeñas, validaciones, muestreos y comprobaciones específicas.
+
+Esta decisión se basa en que la descarga directa permite recuperar el archivo completo con menor sobrecarga, mientras que la API facilita consultas filtradas, pero requiere manejar paginación y genera respuestas de mayor tamaño relativo.
 ---
 
 ## 7. Diccionario de datos
