@@ -8,18 +8,6 @@ from pathlib import Path
 import pytest
 
 from src.extract import (
-    calculate_sha256,
-    select_sources,
-    validate_download,
-)
-from src.extract import (
-    build_session,
-    calculate_sha256,
-    select_sources,
-    validate_download,
-)
-
-from src.extract import (
     build_session,
     calculate_sha256,
     determine_download_status,
@@ -150,6 +138,8 @@ def test_select_sources_returns_all_sources() -> None:
 
 
 def test_select_sources_rejects_unknown_source() -> None:
+    
+    
     """Un source_id inexistente debe producir un mensaje claro."""
     config = {
         "sources": [
@@ -163,6 +153,8 @@ def test_select_sources_rejects_unknown_source() -> None:
             source_id="unknown_source",
             download_all=False,
         )
+        
+        
         
 def test_should_skip_existing_respects_mutability(
     tmp_path: Path,
