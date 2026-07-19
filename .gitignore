@@ -81,3 +81,9 @@ data/staging/*
 # ==============================
 data/manifests/*
 !data/manifests/README.md
+
+# ==============================
+# Generated profiling reports
+# ==============================
+data/profiling/*
+!data/profiling/README.md
