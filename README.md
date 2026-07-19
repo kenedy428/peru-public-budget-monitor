@@ -321,6 +321,10 @@ Las instrucciones para preparar el entorno, descargar las fuentes y verificar su
 
 - `docs/ingestion.md`
 
+La metodología, los comandos y los resultados del perfilado estructural se encuentran en:
+
+- `docs/profiling.md`
+
 ## Principios del proyecto
 
 - No inventar variables que no existan en la fuente oficial.
