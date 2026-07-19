@@ -75,3 +75,9 @@ data/staging/*
 # ==============================
 ~$*.xlsx
 ~$*.xlsm
+
+# ==============================
+# Generated source manifests
+# ==============================
+data/manifests/*
+!data/manifests/README.md

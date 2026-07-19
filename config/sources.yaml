@@ -1,0 +1,49 @@
+project:
+  name: peru-public-budget-monitor
+  raw_data_dir: data/raw
+  manifest_dir: data/manifests
+
+sources:
+  - source_id: mef_devengado_2024
+    resource_type: data
+    reference_year: 2024
+    resource_name: 2024-Gasto-Devengado.csv
+    page_url: https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto-devengado-mensual/resource/0d38c6bd-8f1b-474d-ade3-32c97260f78a
+    download_url: https://fs.datosabiertos.mef.gob.pe/datastorefiles/2024-Gasto-Devengado.csv
+    resource_id: 0d38c6bd-8f1b-474d-ade3-32c97260f78a
+    file_format: csv
+    encoding: utf-8-sig
+    mutable: false
+
+  - source_id: mef_devengado_2025
+    resource_type: data
+    reference_year: 2025
+    resource_name: 2025-Gasto-Devengado-Mensual.csv
+    page_url: https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto-devengado-mensual/resource/8a5a9a6f-1702-4329-8730-67f46e2de2a8
+    download_url: https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Devengado-Mensual.csv
+    resource_id: 8a5a9a6f-1702-4329-8730-67f46e2de2a8
+    file_format: csv
+    encoding: utf-8-sig
+    mutable: false
+
+  - source_id: mef_devengado_2026
+    resource_type: data
+    reference_year: 2026
+    resource_name: 2026-Gasto-Devengado-Mensual.csv
+    page_url: https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto-devengado-mensual/resource/c698c1cd-30f5-4a63-8a77-39484bab1f58
+    download_url: https://fs.datosabiertos.mef.gob.pe/datastorefiles/2026-Gasto-Devengado-Mensual.csv
+    resource_id: c698c1cd-30f5-4a63-8a77-39484bab1f58
+    file_format: csv
+    encoding: utf-8-sig
+    mutable: true
+
+  - source_id: mef_devengado_dictionary
+    resource_type: dictionary
+    reference_year: null
+    resource_name: Gasto_Devengado_Diccionario.csv
+    page_url: https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto-devengado-mensual/resource/d2aca9ca-2820-425e-826b-ee3a7a81c113
+    download_url: https://fs.datosabiertos.mef.gob.pe/datastorefiles/Gasto_Devengado_Diccionario.csv
+    resource_id: d2aca9ca-2820-425e-826b-ee3a7a81c113
+    file_format: csv
+    encoding: utf-8-sig
+    mutable: true
