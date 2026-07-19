@@ -20,7 +20,20 @@ from src.extract import (
 
 
 DEFAULT_SAMPLE_ROWS = 1_000
-
+MONTH_NAMES = (
+    "ENERO",
+    "FEBRERO",
+    "MARZO",
+    "ABRIL",
+    "MAYO",
+    "JUNIO",
+    "JULIO",
+    "AGOSTO",
+    "SEPTIEMBRE",
+    "OCTUBRE",
+    "NOVIEMBRE",
+    "DICIEMBRE",
+)
 
 def configure_logging() -> None:
     """Configura los mensajes mostrados en consola."""
@@ -56,6 +69,141 @@ def load_dictionary_variables(
 
     return set(variables)
 
+def classify_devengado_columns(
+    columns: list[str],
+) -> tuple[list[str], list[str], list[str]]:
+    """Clasifica columnas mensuales, anuales y adicionales de Devengado."""
+    expected_monthly_columns = [
+        f"MONTO_DEVENGADO_{month}"
+        for month in MONTH_NAMES
+    ]
+
+    monthly_columns = [
+        column
+        for column in expected_monthly_columns
+        if column in columns
+    ]
+
+    annual_columns = [
+        column
+        for column in columns
+        if column == "MONTO_DEVENGADO_ANUAL"
+    ]
+
+    classified_columns = set(
+        monthly_columns + annual_columns
+    )
+
+    other_devengado_columns = [
+        column
+        for column in columns
+        if "DEVENGADO" in column.upper()
+        and column not in classified_columns
+    ]
+
+    return (
+        monthly_columns,
+        annual_columns,
+        other_devengado_columns,
+    )
+
+
+def compare_schemas(
+    reports: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compara nombres, cantidad y orden de columnas entre fuentes."""
+    if not reports:
+        raise ValueError(
+            "Se requiere al menos un reporte para comparar esquemas."
+        )
+
+    base_report = reports[0]
+    base_source_id = base_report["source_id"]
+    base_columns = base_report["columns"]
+    base_column_set = set(base_columns)
+
+    comparisons = []
+
+    for report in reports:
+        columns = report["columns"]
+        column_set = set(columns)
+
+        missing_columns = [
+            column
+            for column in base_columns
+            if column not in column_set
+        ]
+
+        additional_columns = [
+            column
+            for column in columns
+            if column not in base_column_set
+        ]
+
+        comparisons.append(
+            {
+                "source_id": report["source_id"],
+                "column_count": len(columns),
+                "same_column_count_as_base": (
+                    len(columns) == len(base_columns)
+                ),
+                "same_column_names_as_base": (
+                    column_set == base_column_set
+                ),
+                "same_column_order_as_base": (
+                    columns == base_columns
+                ),
+                "missing_columns_vs_base": missing_columns,
+                "additional_columns_vs_base": additional_columns,
+            }
+        )
+
+    return {
+        "base_source_id": base_source_id,
+        "source_count": len(reports),
+        "all_same_column_count": all(
+            item["same_column_count_as_base"]
+            for item in comparisons
+        ),
+        "all_same_column_names": all(
+            item["same_column_names_as_base"]
+            for item in comparisons
+        ),
+        "all_same_column_order": all(
+            item["same_column_order_as_base"]
+            for item in comparisons
+        ),
+        "comparisons": comparisons,
+        "compared_at_utc": datetime.now(UTC).isoformat(),
+        "profiling_version": "0.1.0",
+    }
+
+
+def write_schema_comparison_report(
+    comparison: dict[str, Any],
+    profiling_dir: Path,
+) -> Path:
+    """Guarda la comparación consolidada de esquemas."""
+    profiling_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(UTC).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    report_path = (
+        profiling_dir
+        / f"{timestamp}_schema_comparison.json"
+    )
+
+    with report_path.open("w", encoding="utf-8") as file:
+        json.dump(
+            comparison,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return report_path
 
 def profile_csv(
     source: dict[str, Any],
@@ -123,6 +271,11 @@ def profile_csv(
         for column in columns
         if "DEVENGADO" in column.upper()
     ]
+    (
+        monthly_devengado_columns,
+        annual_devengado_columns,
+        other_devengado_columns,
+    ) = classify_devengado_columns(columns)
 
     return {
         "source_id": source_id,
@@ -145,6 +298,12 @@ def profile_csv(
         "dictionary_only_columns": dictionary_only_columns,
         "devengado_column_count": len(devengado_columns),
         "devengado_columns": devengado_columns,
+        "monthly_devengado_column_count": len(monthly_devengado_columns),
+        "monthly_devengado_columns": monthly_devengado_columns,
+        "annual_devengado_column_count": len(annual_devengado_columns),
+        "annual_devengado_columns": annual_devengado_columns,
+        "other_devengado_column_count": len(other_devengado_columns),
+        "other_devengado_columns": other_devengado_columns,
         "profiled_at_utc": datetime.now(UTC).isoformat(),
         "profiling_version": "0.1.0",
     }
@@ -295,6 +454,7 @@ def main() -> int:
             profile_all=args.all,
         )
 
+        generated_reports = []
         for source in sources:
             report = profile_csv(
                 source=source,
@@ -302,6 +462,7 @@ def main() -> int:
                 dictionary_variables=dictionary_variables,
                 sample_rows=args.sample_rows,
             )
+            generated_reports.append(report)
 
             report_path = write_report(
                 report=report,
@@ -321,6 +482,27 @@ def main() -> int:
                 "Reporte generado: %s",
                 report_path,
             )
+
+        if len(generated_reports) > 1:
+            comparison = compare_schemas(generated_reports)
+
+            comparison_path = write_schema_comparison_report(
+                comparison=comparison,
+                profiling_dir=profiling_dir,
+            )
+
+            logging.info(
+                "Comparación de esquemas | cantidad=%s | "
+                "nombres=%s | orden=%s",
+                comparison["all_same_column_count"],
+                comparison["all_same_column_names"],
+                comparison["all_same_column_order"],
+            )
+            logging.info(
+                "Reporte consolidado: %s",
+                comparison_path,
+            )
+
 
         logging.info(
             "Perfilado ligero finalizado correctamente."
