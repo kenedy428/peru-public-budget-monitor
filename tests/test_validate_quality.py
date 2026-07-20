@@ -1,0 +1,164 @@
+"""Pruebas unitarias para la validación de calidad."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from src.validate_quality import (
+    determine_reconciliation_status,
+    validate_source_quality,
+)
+
+
+MONTH_COLUMNS = [
+    "MONTO_DEVENGADO_ENERO",
+    "MONTO_DEVENGADO_FEBRERO",
+    "MONTO_DEVENGADO_MARZO",
+    "MONTO_DEVENGADO_ABRIL",
+    "MONTO_DEVENGADO_MAYO",
+    "MONTO_DEVENGADO_JUNIO",
+    "MONTO_DEVENGADO_JULIO",
+    "MONTO_DEVENGADO_AGOSTO",
+    "MONTO_DEVENGADO_SEPTIEMBRE",
+    "MONTO_DEVENGADO_OCTUBRE",
+    "MONTO_DEVENGADO_NOVIEMBRE",
+    "MONTO_DEVENGADO_DICIEMBRE",
+]
+
+
+def build_header() -> str:
+    """Construye la cabecera mínima requerida."""
+    return ",".join(
+        ["ANO_EJE", *MONTH_COLUMNS, "MONTO_DEVENGADO_ANUAL"]
+    )
+
+
+def test_determine_reconciliation_status() -> None:
+    """Debe clasificar resultados aprobados, advertidos y fallidos."""
+    assert determine_reconciliation_status(0, 0) == "passed"
+    assert determine_reconciliation_status(0, 1) == "warning"
+    assert determine_reconciliation_status(1, 0) == "failed"
+
+
+def test_validate_source_quality_accepts_valid_rows(
+    tmp_path: Path,
+) -> None:
+    """Debe aprobar años y montos correctamente reconciliados."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            build_header()
+            + "\n"
+            + ",".join(["2026", *monthly_values, "12"])
+            + "\n"
+            + ",".join(["2026", *(["0"] * 12), "0"])
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=1,
+        reconciliation_tolerance=0.01,
+    )
+
+    assert result["row_count"] == 2
+    assert result["year_validation"]["status"] == "passed"
+    assert result["annual_reconciliation"]["status"] == "passed"
+    assert result["annual_reconciliation"]["mismatch_count"] == 0
+
+
+def test_validate_source_quality_detects_year_and_amount_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Debe detectar un año incorrecto y una suma anual diferente."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            build_header()
+            + "\n"
+            + ",".join(["2025", *monthly_values, "20"])
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    assert result["year_validation"]["status"] == "failed"
+    assert result["year_validation"]["mismatch_count"] == 1
+    assert result["annual_reconciliation"]["status"] == "failed"
+    assert result["annual_reconciliation"]["mismatch_count"] == 1
+
+
+def test_validate_source_quality_warns_when_amount_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Una fila incompleta no debe reconciliarse silenciosamente."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 11 + [""]
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            build_header()
+            + "\n"
+            + ",".join(["2026", *monthly_values, "11"])
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    assert result["annual_reconciliation"]["status"] == "warning"
+    assert (
+        result["annual_reconciliation"]["not_evaluated_count"]
+        == 1
+    )
+    assert result["columns_with_nulls_count"] == 1
