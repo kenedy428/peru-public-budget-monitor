@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.validate_quality import (
     determine_reconciliation_status,
+    identify_monetary_columns,
     validate_source_quality,
 )
 
@@ -32,6 +33,23 @@ def build_header() -> str:
         ["ANO_EJE", *MONTH_COLUMNS, "MONTO_DEVENGADO_ANUAL"]
     )
 
+def test_identify_monetary_columns() -> None:
+    """Debe identificar únicamente las columnas con prefijo MONTO_."""
+    columns = [
+        "ANO_EJE",
+        "MONTO_PIA",
+        "MONTO_PIM",
+        "SECTOR",
+        "MONTO_DEVENGADO_ANUAL",
+    ]
+
+    result = identify_monetary_columns(columns)
+
+    assert result == [
+        "MONTO_PIA",
+        "MONTO_PIM",
+        "MONTO_DEVENGADO_ANUAL",
+    ]
 
 def test_determine_reconciliation_status() -> None:
     """Debe clasificar resultados aprobados, advertidos y fallidos."""
@@ -162,3 +180,50 @@ def test_validate_source_quality_warns_when_amount_is_missing(
         == 1
     )
     assert result["columns_with_nulls_count"] == 1
+
+def test_validate_source_quality_detects_negative_amounts(
+    tmp_path: Path,
+) -> None:
+    """Debe registrar montos negativos como advertencia."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = [
+        "-1",
+        "1",
+        *(["0"] * 10),
+    ]
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            build_header()
+            + "\n"
+            + ",".join(["2026", *monthly_values, "0"])
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    assert result["annual_reconciliation"]["status"] == "passed"
+    assert result["negative_amounts"]["status"] == "warning"
+    assert result["negative_amounts"][
+        "total_negative_amount_count"
+    ] == 1
+    assert result["negative_amounts"][
+        "columns_with_negative_amounts"
+    ] == ["MONTO_DEVENGADO_ENERO"]

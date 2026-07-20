@@ -57,6 +57,15 @@ def determine_reconciliation_status(
 
     return "passed"
 
+def identify_monetary_columns(
+    columns: list[str],
+) -> list[str]:
+    """Identifica las columnas que representan montos monetarios."""
+    return [
+        column
+        for column in columns
+        if column.upper().startswith("MONTO_")
+    ]
 
 def validate_source_quality(
     source: dict[str, Any],
@@ -95,7 +104,12 @@ def validate_source_quality(
         nrows=0,
     )
     columns = header.columns.astype(str).tolist()
+    monetary_columns = identify_monetary_columns(columns)
 
+    if not monetary_columns:
+        raise ValueError(
+            f"La fuente '{source_id}' no contiene columnas monetarias."
+        )
     (
         monthly_columns,
         annual_columns,
@@ -132,7 +146,7 @@ def validate_source_quality(
         )
 
     annual_column = annual_columns[0]
-    amount_columns = monthly_columns + [annual_column]
+    amount_columns = monetary_columns
 
     null_counts = {
         column: 0
@@ -142,7 +156,10 @@ def validate_source_quality(
         column: 0
         for column in amount_columns
     }
-
+    negative_amount_counts = {
+    column: 0
+    for column in amount_columns
+    }
     row_count = 0
     chunk_count = 0
 
@@ -209,33 +226,32 @@ def validate_source_quality(
             else:
                 observed_years.add(numeric_value)
 
-        numeric_monthly_values = chunk[
-            monthly_columns
+        numeric_amount_values = chunk[
+            amount_columns
         ].apply(
             pd.to_numeric,
             errors="coerce",
         )
 
+        numeric_monthly_values = numeric_amount_values[
+            monthly_columns
+        ]
+        numeric_annual_values = numeric_amount_values[
+            annual_column
+        ]
         raw_annual_values = chunk[annual_column]
-        numeric_annual_values = pd.to_numeric(
-            raw_annual_values,
-            errors="coerce",
-        )
 
-        for column in monthly_columns:
+        for column in amount_columns:
             amount_parse_error_counts[column] += int(
                 (
                     chunk[column].notna()
-                    & numeric_monthly_values[column].isna()
+                    & numeric_amount_values[column].isna()
                 ).sum()
             )
 
-        amount_parse_error_counts[annual_column] += int(
-            (
-                raw_annual_values.notna()
-                & numeric_annual_values.isna()
-            ).sum()
-        )
+            negative_amount_counts[column] += int(
+                numeric_amount_values[column].lt(0).sum()
+            )
 
         comparable_mask = (
             numeric_monthly_values.notna().all(axis=1)
@@ -309,6 +325,22 @@ def validate_source_quality(
         if count > 0
     ]
 
+    columns_with_negative_amounts = [
+        column
+        for column, count in negative_amount_counts.items()
+        if count > 0
+    ]
+
+    total_negative_amount_count = sum(
+        negative_amount_counts.values()
+    )
+
+    negative_amount_status = (
+        "warning"
+        if total_negative_amount_count > 0
+        else "passed"
+    )
+
     year_control_passed = (
         year_null_count == 0
         and year_parse_error_count == 0
@@ -337,6 +369,26 @@ def validate_source_quality(
         "columns_with_nulls": columns_with_nulls,
         "columns_with_nulls_count": len(columns_with_nulls),
         "amount_parse_error_counts": amount_parse_error_counts,
+        "negative_amounts": {
+            "severity": "warning",
+            "status": negative_amount_status,
+            "columns_checked": monetary_columns,
+            "column_count": len(monetary_columns),
+            "negative_counts": negative_amount_counts,
+            "columns_with_negative_amounts": (
+                columns_with_negative_amounts
+            ),
+            "columns_with_negative_amounts_count": len(
+                columns_with_negative_amounts
+            ),
+            "total_negative_amount_count": (
+                total_negative_amount_count
+            ),
+            "rule": (
+                "Los montos negativos se registran como advertencia "
+                "y requieren revisión contextual."
+            ),
+        },
         "year_validation": {
             "severity": "critical",
             "status": (
@@ -395,6 +447,7 @@ def validate_source_quality(
                         count > 0
                         for count in amount_parse_error_counts.values()
                     ),
+                    negative_amount_status == "warning",
                 ]
             ),
         },
