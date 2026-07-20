@@ -26,7 +26,7 @@ from src.profile_sources import select_sources
 
 
 DEFAULT_BATCH_ROWS = 50_000
-
+DEFAULT_SAMPLE_LIMIT = 20
 
 def configure_logging() -> None:
     """Configura los mensajes mostrados en consola."""
@@ -115,6 +115,71 @@ def upsert_hash_batch(
     )
     connection.commit()
 
+def write_duplicate_samples(
+    source_file_path: Path,
+    encoding: str,
+    duplicate_hashes: set[str],
+    output_path: Path,
+) -> int:
+    """Recupera las filas asociadas a los hashes duplicados seleccionados."""
+    if not duplicate_hashes:
+        return 0
+
+    sampled_row_count = 0
+
+    with source_file_path.open(
+        "r",
+        encoding=encoding,
+        newline="",
+    ) as source_file, output_path.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as output_file:
+        reader = csv.reader(
+            source_file,
+            strict=True,
+        )
+
+        header = next(reader, None)
+
+        if header is None:
+            raise ValueError(
+                "No se puede recuperar la muestra porque "
+                "el archivo no contiene cabecera."
+            )
+
+        writer = csv.writer(output_file)
+        writer.writerow(
+            [
+                "_ROW_NUMBER",
+                "_ROW_HASH",
+                *header,
+            ]
+        )
+
+        for row_number, row in enumerate(
+            reader,
+            start=2,
+        ):
+            if not row:
+                continue
+
+            row_hash = calculate_values_hash(row)
+
+            if row_hash not in duplicate_hashes:
+                continue
+
+            writer.writerow(
+                [
+                    row_number,
+                    row_hash,
+                    *row,
+                ]
+            )
+            sampled_row_count += 1
+
+    return sampled_row_count
 
 def scan_duplicate_rows(
     source: dict[str, Any],
@@ -122,11 +187,16 @@ def scan_duplicate_rows(
     quality_dir: Path,
     batch_rows: int,
     keep_database: bool = False,
+    sample_limit: int = DEFAULT_SAMPLE_LIMIT,
 ) -> dict[str, Any]:
     """Detecta filas duplicadas usando una base SQLite temporal."""
     if batch_rows <= 0:
         raise ValueError(
             "batch_rows debe ser mayor que cero."
+        )
+    if sample_limit < 0:
+        raise ValueError(
+            "sample_limit no puede ser negativo."
         )
 
     source_id = source["source_id"]
@@ -292,7 +362,52 @@ def scan_duplicate_rows(
             if duplicate_row_count > 0
             else "passed"
         )
+        sampled_duplicate_group_count = 0
+        sampled_row_count = 0
+        duplicate_sample_path: str | None = None
 
+        if duplicate_group_count > 0 and sample_limit > 0:
+            duplicate_hash_rows = connection.execute(
+                """
+                SELECT row_hash
+                FROM row_hashes
+                WHERE occurrence_count > 1
+                ORDER BY occurrence_count DESC, row_hash
+                LIMIT ?
+                """,
+                (sample_limit,),
+            ).fetchall()
+
+            duplicate_hashes = {
+                str(row[0])
+                for row in duplicate_hash_rows
+            }
+
+            sampled_duplicate_group_count = len(
+                duplicate_hashes
+            )
+
+            sample_timestamp = datetime.now(UTC).strftime(
+                "%Y%m%dT%H%M%S%fZ"
+            )
+            sample_path = (
+                quality_dir
+                / (
+                    f"{sample_timestamp}_{source_id}"
+                    "_duplicate_samples.csv"
+                )
+            )
+
+            sampled_row_count = write_duplicate_samples(
+                source_file_path=file_path,
+                encoding=encoding,
+                duplicate_hashes=duplicate_hashes,
+                output_path=sample_path,
+            )
+
+            duplicate_sample_path = get_report_path(
+                sample_path
+            )
         return {
             "source_id": source_id,
             "resource_name": resource_name,
@@ -317,6 +432,12 @@ def scan_duplicate_rows(
             "maximum_occurrence_count": (
                 maximum_occurrence_count
             ),
+            "sample_limit": sample_limit,
+            "sampled_duplicate_group_count": (
+                sampled_duplicate_group_count
+            ),
+            "sampled_row_count": sampled_row_count,
+            "duplicate_sample_path": duplicate_sample_path,
             "blank_row_count": blank_row_count,
             "malformed_row_count": malformed_row_count,
             "duplicate_control": {
@@ -405,6 +526,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Cantidad de hashes registrados en cada lote.",
     )
     parser.add_argument(
+        "--sample-limit",
+        type=int,
+        default=DEFAULT_SAMPLE_LIMIT,
+        help=(
+            "Máximo de grupos duplicados cuyas filas "
+            "se incluirán en el CSV de muestra."
+        ),
+    )
+    parser.add_argument(
         "--keep-database",
         action="store_true",
         help="Conserva la base SQLite temporal después del análisis.",
@@ -444,6 +574,7 @@ def main() -> int:
                 quality_dir=quality_dir,
                 batch_rows=args.batch_rows,
                 keep_database=args.keep_database,
+                sample_limit=args.sample_limit,
             )
 
             report_path = write_duplicate_report(
@@ -464,6 +595,11 @@ def main() -> int:
                 "Reporte generado: %s",
                 report_path,
             )
+            if report["duplicate_sample_path"]:
+                logging.info(
+                    "Muestra de duplicados: %s",
+                    report["duplicate_sample_path"],
+                )
 
         logging.info(
             "Detección de duplicados finalizada correctamente."

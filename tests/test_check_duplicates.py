@@ -83,7 +83,19 @@ def test_scan_duplicate_rows_detects_duplicates_across_batches(
     assert result["rows_in_duplicate_groups"] == 4
     assert result["maximum_occurrence_count"] == 2
     assert result["duplicate_control"]["status"] == "warning"
+    assert result["sampled_duplicate_group_count"] == 2
+    assert result["sampled_row_count"] == 4
+    assert result["duplicate_sample_path"] is not None
 
+    sample_path = Path(
+        result["duplicate_sample_path"]
+    )
+    assert sample_path.exists()
+
+    sample = pd.read_csv(sample_path)
+
+    assert len(sample) == 4
+    assert set(sample["ID"]) == {1, 2}
 
 def test_scan_duplicate_rows_accepts_unique_rows(
     tmp_path: Path,
@@ -123,3 +135,6 @@ def test_scan_duplicate_rows_accepts_unique_rows(
     assert result["duplicate_group_count"] == 0
     assert result["duplicate_row_count"] == 0
     assert result["duplicate_control"]["status"] == "passed"
+    assert result["sampled_duplicate_group_count"] == 0
+    assert result["sampled_row_count"] == 0
+    assert result["duplicate_sample_path"] is None
