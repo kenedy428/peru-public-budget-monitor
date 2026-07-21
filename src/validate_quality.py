@@ -628,7 +628,7 @@ def validate_source_quality(
             ),
             "informational_findings": sum(
                 [
-                    blank_like_status == "informational",
+                    total_structural_blank_like_count > 0,
                 ]
             ),
         },

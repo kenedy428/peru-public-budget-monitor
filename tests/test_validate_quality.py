@@ -336,3 +336,64 @@ def test_validate_source_quality_classifies_structural_blanks(
         result["quality_summary"]["informational_findings"]
         == 1
     )
+
+def test_validate_source_quality_reports_structural_and_unexpected_blanks(
+    tmp_path: Path,
+) -> None:
+    """Debe reportar a la vez vacíos estructurales e inesperados."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            "NIVEL_GOBIERNO_NOMBRE,"
+            "SECTOR,SECTOR_NOMBRE,"
+            "PLIEGO,PLIEGO_NOMBRE,"
+            "META_NOMBRE,"
+            + build_header()
+            + "\n"
+            + ",".join(
+                [
+                    "GOBIERNOS LOCALES",
+                    "   ",
+                    "   ",
+                    "   ",
+                    "   ",
+                    "   ",
+                    "2026",
+                    *monthly_values,
+                    "12",
+                ]
+            )
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    blank_like = result["blank_like_values"]
+
+    assert blank_like["status"] == "warning"
+    assert blank_like["total_structural_blank_like_count"] == 4
+    assert blank_like["total_unexpected_blank_like_count"] == 1
+    assert result["quality_summary"]["warnings"] == 1
+    assert (
+        result["quality_summary"]["informational_findings"]
+        == 1
+    )
