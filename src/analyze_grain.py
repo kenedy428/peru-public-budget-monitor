@@ -14,7 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.check_duplicates import calculate_values_hash
+from src.check_duplicates import (
+    calculate_values_hash,
+    get_report_path,
+)
 from src.extract import (
     DEFAULT_CONFIG_PATH,
     PROJECT_ROOT,
@@ -24,6 +27,8 @@ from src.profile_sources import select_sources
 
 
 DEFAULT_BATCH_ROWS = 50_000
+DEFAULT_SAMPLE_LIMIT = 20
+DEFAULT_SAMPLE_KEY_NAME = "business_key_v1"
 
 MAXIMAL_TECHNICAL_KEY = (
     "ANO_EJE",
@@ -115,6 +120,8 @@ def configure_database(
             key_name TEXT NOT NULL,
             key_hash TEXT NOT NULL,
             occurrence_count INTEGER NOT NULL,
+            first_row_number INTEGER NOT NULL,
+            second_row_number INTEGER,
             PRIMARY KEY (key_name, key_hash)
         ) WITHOUT ROWID
         """
@@ -144,7 +151,7 @@ def validate_candidate_columns(
 
 def upsert_hash_batch(
     connection: sqlite3.Connection,
-    hash_batch: list[tuple[str, str]],
+    hash_batch: list[tuple[str, str, int]],
 ) -> None:
     """Registra un lote de hashes de claves candidatas."""
     connection.executemany(
@@ -152,12 +159,18 @@ def upsert_hash_batch(
         INSERT INTO candidate_key_hashes (
             key_name,
             key_hash,
-            occurrence_count
+            occurrence_count,
+            first_row_number,
+            second_row_number
         )
-        VALUES (?, ?, 1)
+        VALUES (?, ?, 1, ?, NULL)
         ON CONFLICT(key_name, key_hash)
         DO UPDATE SET
-            occurrence_count = occurrence_count + 1
+            occurrence_count = occurrence_count + 1,
+            second_row_number = COALESCE(
+                second_row_number,
+                excluded.first_row_number
+            )
         """,
         hash_batch,
     )
@@ -251,6 +264,106 @@ def summarize_candidate_key(
         "maximum_occurrence_count": maximum_occurrence_count,
         "duplicate_rate": round(duplicate_rate, 10),
     }
+def find_collision_row_numbers(
+    connection: sqlite3.Connection,
+    key_name: str,
+    sample_limit: int,
+) -> tuple[int, set[int]]:
+    """Obtiene dos filas representativas por grupo en colisión."""
+    if sample_limit <= 0:
+        return 0, set()
+
+    collision_rows = connection.execute(
+        """
+        SELECT
+            first_row_number,
+            second_row_number
+        FROM candidate_key_hashes
+        WHERE key_name = ?
+          AND occurrence_count > 1
+        ORDER BY occurrence_count DESC, key_hash
+        LIMIT ?
+        """,
+        (
+            key_name,
+            sample_limit,
+        ),
+    ).fetchall()
+
+    row_numbers = {
+        int(row_number)
+        for row_pair in collision_rows
+        for row_number in row_pair
+        if row_number is not None
+    }
+
+    return len(collision_rows), row_numbers
+
+
+def write_collision_samples(
+    source_file_path: Path,
+    encoding: str,
+    row_numbers: set[int],
+    output_path: Path,
+) -> int:
+    """Exporta las filas originales seleccionadas por número."""
+    if not row_numbers:
+        return 0
+
+    remaining_row_numbers = set(row_numbers)
+    sampled_row_count = 0
+
+    with source_file_path.open(
+        "r",
+        encoding=encoding,
+        newline="",
+    ) as source_file, output_path.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as output_file:
+        reader = csv.reader(
+            source_file,
+            strict=True,
+        )
+
+        header = next(reader, None)
+
+        if header is None:
+            raise ValueError(
+                "No se puede exportar la muestra porque "
+                "el archivo no contiene cabecera."
+            )
+
+        writer = csv.writer(output_file)
+        writer.writerow(
+            [
+                "_ROW_NUMBER",
+                *header,
+            ]
+        )
+
+        for row_number, row in enumerate(
+            reader,
+            start=2,
+        ):
+            if row_number not in remaining_row_numbers:
+                continue
+
+            writer.writerow(
+                [
+                    row_number,
+                    *row,
+                ]
+            )
+
+            sampled_row_count += 1
+            remaining_row_numbers.remove(row_number)
+
+            if not remaining_row_numbers:
+                break
+
+    return sampled_row_count
 
 
 def analyze_candidate_keys(
@@ -259,15 +372,31 @@ def analyze_candidate_keys(
     profiling_dir: Path,
     batch_rows: int,
     candidate_keys: dict[str, tuple[str, ...]] | None = None,
+    sample_limit: int = DEFAULT_SAMPLE_LIMIT,
+    sample_key_name: str | None = None,
 ) -> dict[str, Any]:
     """Evalúa la unicidad de varias claves en un único recorrido."""
     if batch_rows <= 0:
         raise ValueError(
             "batch_rows debe ser mayor que cero."
         )
-
+    if sample_limit < 0:
+        raise ValueError(
+            "sample_limit no puede ser negativo."
+        )
     if candidate_keys is None:
         candidate_keys = DEFAULT_CANDIDATE_KEYS
+    if sample_key_name is None:
+        if DEFAULT_SAMPLE_KEY_NAME in candidate_keys:
+            sample_key_name = DEFAULT_SAMPLE_KEY_NAME
+        else:
+            sample_key_name = next(iter(candidate_keys))
+
+    if sample_key_name not in candidate_keys:
+        raise ValueError(
+            "La clave seleccionada para la muestra no existe: "
+            f"{sample_key_name}"
+        )
 
     source_id = source["source_id"]
     resource_name = source["resource_name"]
@@ -335,10 +464,13 @@ def analyze_candidate_keys(
             }
 
             expected_column_count = len(header)
-            hash_batch: list[tuple[str, str]] = []
+            hash_batch: list[tuple[str, str, int]] = []
             rows_in_current_batch = 0
 
-            for row in reader:
+            for row_number, row in enumerate(
+                reader,
+                start=2,
+            ):
                 if not row:
                     blank_row_count += 1
                     continue
@@ -365,6 +497,7 @@ def analyze_candidate_keys(
                         (
                             key_name,
                             key_hash,
+                            row_number,
                         )
                     )
 
@@ -407,6 +540,48 @@ def analyze_candidate_keys(
             }
             for key_name, key_columns in candidate_keys.items()
         }
+        sampled_collision_group_count = 0
+        sampled_row_count = 0
+        collision_sample_path: str | None = None
+
+        if (
+            sample_limit > 0
+            and key_results[sample_key_name][
+                "duplicate_group_count"
+            ] > 0
+        ):
+            (
+                sampled_collision_group_count,
+                collision_row_numbers,
+            ) = find_collision_row_numbers(
+                connection=connection,
+                key_name=sample_key_name,
+                sample_limit=sample_limit,
+            )
+
+            sample_timestamp = datetime.now(UTC).strftime(
+                "%Y%m%dT%H%M%S%fZ"
+            )
+
+            sample_path = (
+                profiling_dir
+                / (
+                    f"{sample_timestamp}_{source_id}_"
+                    f"{sample_key_name}_collision_samples.csv"
+                )
+            )
+
+            sampled_row_count = write_collision_samples(
+                source_file_path=file_path,
+                encoding=encoding,
+                row_numbers=collision_row_numbers,
+                output_path=sample_path,
+            )
+
+            collision_sample_path = get_report_path(
+                sample_path
+            )
+
 
         return {
             "source_id": source_id,
@@ -419,6 +594,13 @@ def analyze_candidate_keys(
             "batch_rows": batch_rows,
             "batch_count": batch_count,
             "candidate_keys": key_results,
+            "sample_key_name": sample_key_name,
+            "sample_limit": sample_limit,
+            "sampled_collision_group_count": (
+                sampled_collision_group_count
+            ),
+            "sampled_row_count": sampled_row_count,
+            "collision_sample_path": collision_sample_path,
             "analyzed_at_utc": datetime.now(UTC).isoformat(),
             "analysis_version": "0.1.0",
         }
@@ -489,6 +671,21 @@ def parse_arguments() -> argparse.Namespace:
         default=DEFAULT_BATCH_ROWS,
         help="Cantidad de filas procesadas por lote.",
     )
+    parser.add_argument(
+        "--sample-limit",
+        type=int,
+        default=DEFAULT_SAMPLE_LIMIT,
+        help=(
+            "Máximo de grupos en colisión que se incluirán "
+            "en la muestra."
+        ),
+    )
+
+    parser.add_argument(
+        "--sample-key",
+        default=DEFAULT_SAMPLE_KEY_NAME,
+        help="Nombre de la clave candidata que se muestreará.",
+    )
 
     return parser.parse_args()
 
@@ -523,6 +720,8 @@ def main() -> int:
                 raw_data_dir=raw_data_dir,
                 profiling_dir=profiling_dir,
                 batch_rows=args.batch_rows,
+                sample_limit=args.sample_limit,
+                sample_key_name=args.sample_key,
             )
 
             report_path = write_report(
@@ -553,6 +752,11 @@ def main() -> int:
                 "Reporte generado: %s",
                 report_path,
             )
+            if report["collision_sample_path"]:
+                logging.info(
+                    "Muestra de colisiones: %s",
+                    report["collision_sample_path"],
+                )
 
         logging.info(
             "Análisis de grano finalizado correctamente."

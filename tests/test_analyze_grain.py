@@ -53,6 +53,8 @@ def test_analyze_candidate_keys_detects_compact_collisions(
         profiling_dir=profiling_dir,
         batch_rows=2,
         candidate_keys=candidate_keys,
+        sample_limit=10,
+        sample_key_name="compact",
     )
 
     maximal = report["candidate_keys"]["maximal"]
@@ -69,6 +71,24 @@ def test_analyze_candidate_keys_detects_compact_collisions(
     assert compact["duplicate_key_row_count"] == 1
     assert compact["maximum_occurrence_count"] == 2
 
+    assert report["sample_key_name"] == "compact"
+    assert report["sampled_collision_group_count"] == 1
+    assert report["sampled_row_count"] == 2
+    assert report["collision_sample_path"] is not None
+
+    sample_path = Path(
+        report["collision_sample_path"]
+    )
+
+    assert sample_path.exists()
+
+    sample_lines = sample_path.read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+    assert len(sample_lines) == 3
+    assert sample_lines[1].startswith("2,")
+    assert sample_lines[2].startswith("3,")
 
 def test_analyze_candidate_keys_rejects_missing_columns(
     tmp_path: Path,
