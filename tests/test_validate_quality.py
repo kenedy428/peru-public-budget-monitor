@@ -240,7 +240,7 @@ def test_validate_source_quality_detects_whitespace_only_values(
     file_path = raw_dir / "sample.csv"
     file_path.write_text(
         (
-            "SECTOR_NOMBRE,"
+            "META_NOMBRE,"
             + build_header()
             + "\n"
             + ",".join(
@@ -274,5 +274,65 @@ def test_validate_source_quality_detects_whitespace_only_values(
 
     assert blank_like["status"] == "warning"
     assert blank_like["total_blank_like_count"] == 1
-    assert blank_like["blank_like_counts"]["SECTOR_NOMBRE"] == 1
-    assert result["null_counts"]["SECTOR_NOMBRE"] == 0
+    assert blank_like["blank_like_counts"]["META_NOMBRE"] == 1
+    assert result["null_counts"]["META_NOMBRE"] == 0
+
+def test_validate_source_quality_classifies_structural_blanks(
+    tmp_path: Path,
+) -> None:
+    """Los vacíos de sector y pliego local deben ser informativos."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            "NIVEL_GOBIERNO_NOMBRE,"
+            "SECTOR,SECTOR_NOMBRE,"
+            "PLIEGO,PLIEGO_NOMBRE,"
+            + build_header()
+            + "\n"
+            + ",".join(
+                [
+                    "GOBIERNOS LOCALES",
+                    "   ",
+                    "   ",
+                    "   ",
+                    "   ",
+                    "2026",
+                    *monthly_values,
+                    "12",
+                ]
+            )
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    blank_like = result["blank_like_values"]
+
+    assert blank_like["status"] == "informational"
+    assert blank_like["total_blank_like_count"] == 4
+    assert blank_like["total_structural_blank_like_count"] == 4
+    assert blank_like["total_unexpected_blank_like_count"] == 0
+    assert result["quality_summary"]["warnings"] == 0
+    assert (
+        result["quality_summary"]["informational_findings"]
+        == 1
+    )

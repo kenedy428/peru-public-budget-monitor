@@ -25,6 +25,15 @@ from src.profile_sources import (
 
 DEFAULT_CHUNK_ROWS = 100_000
 DEFAULT_RECONCILIATION_TOLERANCE = 0.01
+LOCAL_GOVERNMENT_NAME = "GOBIERNOS LOCALES"
+
+LOCAL_GOVERNMENT_STRUCTURAL_BLANK_COLUMNS = {
+    "SECTOR",
+    "SECTOR_NOMBRE",
+    "PLIEGO",
+    "PLIEGO_NOMBRE",
+}
+
 
 
 def configure_logging() -> None:
@@ -54,6 +63,19 @@ def determine_reconciliation_status(
 
     if not_evaluated_count > 0:
         return "warning"
+
+    return "passed"
+
+def determine_blank_like_status(
+    unexpected_count: int,
+    structural_count: int,
+) -> str:
+    """Clasifica los valores vacíos según su contexto."""
+    if unexpected_count > 0:
+        return "warning"
+
+    if structural_count > 0:
+        return "informational"
 
     return "passed"
 
@@ -156,6 +178,15 @@ def validate_source_quality(
         column: 0
         for column in columns
     }
+    structural_blank_like_counts = {
+        column: 0
+        for column in columns
+    }
+
+    unexpected_blank_like_counts = {
+        column: 0
+        for column in columns
+    }
     amount_parse_error_counts = {
         column: 0
         for column in amount_columns
@@ -205,18 +236,62 @@ def validate_source_quality(
             include=["object", "string"],
         ).columns
 
-        for column in string_columns:
-            non_null_values = (
-                chunk[column]
-                .dropna()
+        government_level_values = None
+
+        if "NIVEL_GOBIERNO_NOMBRE" in chunk.columns:
+            government_level_values = (
+                chunk["NIVEL_GOBIERNO_NOMBRE"]
                 .astype("string")
+                .str.strip()
             )
 
-            blank_like_counts[str(column)] += int(
-                non_null_values
+        for column in string_columns:
+            normalized_values = (
+                chunk[column]
+                .astype("string")
                 .str.strip()
+            )
+
+            blank_mask = (
+                normalized_values
                 .eq("")
-                .sum()
+                .fillna(False)
+            )
+
+            blank_count = int(blank_mask.sum())
+
+            blank_like_counts[str(column)] += blank_count
+
+            structural_mask = pd.Series(
+                False,
+                index=chunk.index,
+            )
+
+            if (
+                column
+                in LOCAL_GOVERNMENT_STRUCTURAL_BLANK_COLUMNS
+                and government_level_values is not None
+            ):
+                structural_mask = (
+                    blank_mask
+                    & government_level_values
+                    .eq(LOCAL_GOVERNMENT_NAME)
+                    .fillna(False)
+                )
+
+            structural_count = int(
+                structural_mask.sum()
+            )
+
+            structural_blank_like_counts[
+                str(column)
+            ] += structural_count
+
+            unexpected_blank_like_counts[
+                str(column)
+            ] += (
+                blank_count
+                - structural_count
             )
 
         raw_year_values = chunk["ANO_EJE"]
@@ -354,14 +429,41 @@ def validate_source_quality(
         if count > 0
     ]
 
+    columns_with_structural_blank_like_values = [
+        column
+        for column, count
+        in structural_blank_like_counts.items()
+        if count > 0
+    ]
+
+    columns_with_unexpected_blank_like_values = [
+        column
+        for column, count
+        in unexpected_blank_like_counts.items()
+        if count > 0
+    ]
+
     total_blank_like_count = sum(
         blank_like_counts.values()
     )
 
-    blank_like_status = (
+    total_structural_blank_like_count = sum(
+        structural_blank_like_counts.values()
+    )
+
+    total_unexpected_blank_like_count = sum(
+        unexpected_blank_like_counts.values()
+    )
+
+    blank_like_status = determine_blank_like_status(
+        unexpected_count=total_unexpected_blank_like_count,
+        structural_count=total_structural_blank_like_count,
+    )
+
+    blank_like_severity = (
         "warning"
-        if total_blank_like_count > 0
-        else "passed"
+        if total_unexpected_blank_like_count > 0
+        else "informational"
     )
 
     columns_with_negative_amounts = [
@@ -408,14 +510,32 @@ def validate_source_quality(
         "columns_with_nulls": columns_with_nulls,
         "columns_with_nulls_count": len(columns_with_nulls),
         "blank_like_values": {
-            "severity": "warning",
+            "severity": blank_like_severity,
             "status": blank_like_status,
             "blank_like_counts": blank_like_counts,
+            "structural_blank_like_counts": (
+                structural_blank_like_counts
+            ),
+            "unexpected_blank_like_counts": (
+                unexpected_blank_like_counts
+            ),
             "columns_with_blank_like_values": (
                 columns_with_blank_like_values
             ),
             "columns_with_blank_like_values_count": len(
                 columns_with_blank_like_values
+            ),
+            "columns_with_structural_blank_like_values": (
+                columns_with_structural_blank_like_values
+            ),
+            "columns_with_unexpected_blank_like_values": (
+                columns_with_unexpected_blank_like_values
+            ),
+            "total_structural_blank_like_count": (
+                total_structural_blank_like_count
+            ),
+            "total_unexpected_blank_like_count": (
+                total_unexpected_blank_like_count
             ),
             "total_blank_like_count": total_blank_like_count,
             "rule": (
@@ -504,6 +624,11 @@ def validate_source_quality(
                         for count in amount_parse_error_counts.values()
                     ),
                     negative_amount_status == "warning",
+                ]
+            ),
+            "informational_findings": sum(
+                [
+                    blank_like_status == "informational",
                 ]
             ),
         },
