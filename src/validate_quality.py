@@ -152,6 +152,10 @@ def validate_source_quality(
         column: 0
         for column in columns
     }
+    blank_like_counts = {
+        column: 0
+        for column in columns
+    }
     amount_parse_error_counts = {
         column: 0
         for column in amount_columns
@@ -195,6 +199,25 @@ def validate_source_quality(
 
         for column, value in chunk_null_counts.items():
             null_counts[str(column)] += int(value)
+
+
+        string_columns = chunk.select_dtypes(
+            include=["object", "string"],
+        ).columns
+
+        for column in string_columns:
+            non_null_values = (
+                chunk[column]
+                .dropna()
+                .astype("string")
+            )
+
+            blank_like_counts[str(column)] += int(
+                non_null_values
+                .str.strip()
+                .eq("")
+                .sum()
+            )
 
         raw_year_values = chunk["ANO_EJE"]
         numeric_year_values = pd.to_numeric(
@@ -325,6 +348,22 @@ def validate_source_quality(
         if count > 0
     ]
 
+    columns_with_blank_like_values = [
+        column
+        for column, count in blank_like_counts.items()
+        if count > 0
+    ]
+
+    total_blank_like_count = sum(
+        blank_like_counts.values()
+    )
+
+    blank_like_status = (
+        "warning"
+        if total_blank_like_count > 0
+        else "passed"
+    )
+
     columns_with_negative_amounts = [
         column
         for column, count in negative_amount_counts.items()
@@ -368,6 +407,22 @@ def validate_source_quality(
         "null_rates": null_rates,
         "columns_with_nulls": columns_with_nulls,
         "columns_with_nulls_count": len(columns_with_nulls),
+        "blank_like_values": {
+            "severity": "warning",
+            "status": blank_like_status,
+            "blank_like_counts": blank_like_counts,
+            "columns_with_blank_like_values": (
+                columns_with_blank_like_values
+            ),
+            "columns_with_blank_like_values_count": len(
+                columns_with_blank_like_values
+            ),
+            "total_blank_like_count": total_blank_like_count,
+            "rule": (
+                "Se considera vacío un valor no nulo que, "
+                "después de retirar espacios, no contiene caracteres."
+            ),
+        },
         "amount_parse_error_counts": amount_parse_error_counts,
         "negative_amounts": {
             "severity": "warning",
@@ -443,6 +498,7 @@ def validate_source_quality(
                 [
                     reconciliation_status == "warning",
                     len(columns_with_nulls) > 0,
+                    blank_like_status == "warning",
                     any(
                         count > 0
                         for count in amount_parse_error_counts.values()

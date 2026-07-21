@@ -227,3 +227,52 @@ def test_validate_source_quality_detects_negative_amounts(
     assert result["negative_amounts"][
         "columns_with_negative_amounts"
     ] == ["MONTO_DEVENGADO_ENERO"]
+
+def test_validate_source_quality_detects_whitespace_only_values(
+    tmp_path: Path,
+) -> None:
+    """Debe detectar cadenas formadas únicamente por espacios."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            "SECTOR_NOMBRE,"
+            + build_header()
+            + "\n"
+            + ",".join(
+                [
+                    "   ",
+                    "2026",
+                    *monthly_values,
+                    "12",
+                ]
+            )
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    blank_like = result["blank_like_values"]
+
+    assert blank_like["status"] == "warning"
+    assert blank_like["total_blank_like_count"] == 1
+    assert blank_like["blank_like_counts"]["SECTOR_NOMBRE"] == 1
+    assert result["null_counts"]["SECTOR_NOMBRE"] == 0
