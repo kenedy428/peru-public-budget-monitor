@@ -397,3 +397,89 @@ def test_validate_source_quality_reports_structural_and_unexpected_blanks(
         result["quality_summary"]["informational_findings"]
         == 1
     )
+
+def test_validate_source_quality_classifies_contextual_structural_blanks(
+    tmp_path: Path,
+) -> None:
+    """Debe reconocer vacíos estructurales según códigos de contexto."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monthly_values = ["1"] * 12
+
+    file_path = raw_dir / "sample.csv"
+    file_path.write_text(
+        (
+            "FINALIDAD,META_NOMBRE,"
+            "DEPARTAMENTO_META,"
+            "DEPARTAMENTO_META_NOMBRE,"
+            + build_header()
+            + "\n"
+            + ",".join(
+                [
+                    "99999",
+                    "   ",
+                    "0",
+                    "   ",
+                    "2026",
+                    *monthly_values,
+                    "12",
+                ]
+            )
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    result = validate_source_quality(
+        source=source,
+        raw_data_dir=raw_dir,
+        chunk_rows=10,
+        reconciliation_tolerance=0.01,
+    )
+
+    blank_like = result["blank_like_values"]
+
+    assert blank_like["status"] == "informational"
+    assert blank_like["total_blank_like_count"] == 2
+    assert blank_like["total_structural_blank_like_count"] == 2
+    assert blank_like["total_unexpected_blank_like_count"] == 0
+
+    assert (
+        blank_like["structural_blank_like_counts"][
+            "META_NOMBRE"
+        ]
+        == 1
+    )
+    assert (
+        blank_like["structural_blank_like_counts"][
+            "DEPARTAMENTO_META_NOMBRE"
+        ]
+        == 1
+    )
+
+    assert (
+        blank_like["unexpected_blank_like_counts"][
+            "META_NOMBRE"
+        ]
+        == 0
+    )
+    assert (
+        blank_like["unexpected_blank_like_counts"][
+            "DEPARTAMENTO_META_NOMBRE"
+        ]
+        == 0
+    )
+
+    assert result["quality_summary"]["warnings"] == 0
+    assert (
+        result["quality_summary"]["informational_findings"]
+        == 1
+    )

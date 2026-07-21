@@ -33,7 +33,8 @@ LOCAL_GOVERNMENT_STRUCTURAL_BLANK_COLUMNS = {
     "PLIEGO",
     "PLIEGO_NOMBRE",
 }
-
+NO_META_FINALITY_CODE = "99999"
+NO_DEPARTMENT_META_CODE = "0"
 
 
 def configure_logging() -> None:
@@ -244,7 +245,23 @@ def validate_source_quality(
                 .astype("string")
                 .str.strip()
             )
+        finalidad_values = None
 
+        if "FINALIDAD" in chunk.columns:
+            finalidad_values = (
+                chunk["FINALIDAD"]
+                .astype("string")
+                .str.strip()
+            )
+
+        department_meta_values = None
+
+        if "DEPARTAMENTO_META" in chunk.columns:
+            department_meta_values = (
+                chunk["DEPARTAMENTO_META"]
+                .astype("string")
+                .str.strip()
+            )
         for column in string_columns:
             normalized_values = (
                 chunk[column]
@@ -276,6 +293,28 @@ def validate_source_quality(
                     blank_mask
                     & government_level_values
                     .eq(LOCAL_GOVERNMENT_NAME)
+                    .fillna(False)
+                )
+
+            elif (
+                column == "META_NOMBRE"
+                and finalidad_values is not None
+            ):
+                structural_mask = (
+                    blank_mask
+                    & finalidad_values
+                    .eq(NO_META_FINALITY_CODE)
+                    .fillna(False)
+                )
+
+            elif (
+                column == "DEPARTAMENTO_META_NOMBRE"
+                and department_meta_values is not None
+            ):
+                structural_mask = (
+                    blank_mask
+                    & department_meta_values
+                    .eq(NO_DEPARTMENT_META_CODE)
                     .fillna(False)
                 )
 
