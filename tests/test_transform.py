@@ -176,3 +176,61 @@ def test_consolidate_dataframe_rejects_invalid_amounts() -> None:
             key_columns=("KEY",),
             measure_columns=("MONTO_PIM",),
         )
+
+def test_transform_csv_file_consolidates_across_chunks(
+    tmp_path,
+) -> None:
+    """Debe consolidar y deduplicar entre bloques diferentes."""
+    from pathlib import Path
+
+    from src.transform import transform_csv_file
+
+    source_path = Path(tmp_path) / "source.csv"
+    output_path = Path(tmp_path) / "processed.csv"
+
+    source_path.write_text(
+        (
+            "KEY,DESCRIPTION,"
+            "MONTO_PIM,MONTO_CERTIFICADO_ANUAL\n"
+            "C,Registro cero,0,0\n"
+            "A,Registro A,100,0\n"
+            "B,Registro B,50,25\n"
+            "A,Registro A,0,80\n"
+            "C,Registro cero,0,0\n"
+        ),
+        encoding="utf-8",
+    )
+
+    report = transform_csv_file(
+        source_file_path=source_path,
+        output_file_path=output_path,
+        encoding="utf-8",
+        key_columns=("KEY",),
+        chunk_rows=2,
+    )
+
+    processed = pd.read_csv(
+        output_path,
+        encoding="utf-8",
+    )
+
+    assert report["row_count_before"] == 5
+    assert report["exact_duplicate_rows_removed"] == 1
+    assert report["unique_full_row_count"] == 4
+    assert report["row_count_after_consolidation"] == 3
+    assert report["rows_consolidated"] == 1
+    assert report["total_rows_removed"] == 2
+    assert report["batch_count"] == 3
+    assert report["totals_preserved"] is True
+
+    assert len(processed) == 3
+
+    consolidated_a = processed.loc[
+        processed["KEY"].eq("A")
+    ].iloc[0]
+
+    assert consolidated_a["MONTO_PIM"] == 100
+    assert (
+        consolidated_a["MONTO_CERTIFICADO_ANUAL"]
+        == 80
+    )
