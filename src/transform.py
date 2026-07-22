@@ -29,6 +29,9 @@ from src.profile_sources import select_sources
 
 DEFAULT_RECONCILIATION_TOLERANCE = 0.01
 DEFAULT_FILE_CHUNK_ROWS = 50_000
+MONETARY_DECIMAL_PLACES = 2
+PROGRESS_LOG_BATCH_INTERVAL = 5
+OUTPUT_PROGRESS_ROW_INTERVAL = 250_000
 
 def identify_measure_columns(
     columns: Sequence[str],
@@ -179,18 +182,24 @@ def calculate_measure_totals(
         for column in measure_columns
     }
 
-
 def compare_measure_totals(
     totals_before: dict[str, float],
     totals_after: dict[str, float],
     tolerance: float,
+    decimal_places: int = MONETARY_DECIMAL_PLACES,
 ) -> tuple[dict[str, float], bool]:
-    """Compara los totales monetarios antes y después."""
+    """Compara los totales a la precisión monetaria indicada."""
     differences = {
         column: round(
-            totals_after[column]
-            - totals_before[column],
-            10,
+            round(
+                totals_after[column],
+                decimal_places,
+            )
+            - round(
+                totals_before[column],
+                decimal_places,
+            ),
+            decimal_places,
         )
         for column in totals_before
     }
@@ -325,6 +334,15 @@ def consolidate_dataframe(
         measure_columns=measure_columns,
     )
 
+    raw_measure_total_differences = {
+        column: round(
+            measure_totals_after[column]
+            - measure_totals_before[column],
+            10,
+        )
+        for column in measure_columns
+    }
+
     (
         measure_total_differences,
         totals_preserved,
@@ -371,6 +389,9 @@ def consolidate_dataframe(
         ),
         "measure_totals_after": (
             measure_totals_after
+        ),
+        "raw_measure_total_differences": (
+            raw_measure_total_differences
         ),
         "measure_total_differences": (
             measure_total_differences
@@ -817,6 +838,28 @@ def transform_csv_file(
             row_count_before += len(working)
             data_row_offset += len(working)
             batch_count += 1
+            if (
+                batch_count
+                % PROGRESS_LOG_BATCH_INTERVAL
+                == 0
+            ):
+                logging.info(
+                    "%s | bloques=%s | "
+                    "filas procesadas=%s | "
+                    "duplicados exactos=%s",
+                    source_file_path.name,
+                    batch_count,
+                    f"{row_count_before:,}",
+                    f"{exact_duplicate_rows_removed:,}",
+                )
+
+        logging.info(
+            "%s | lectura terminada | "
+            "bloques=%s | filas=%s",
+            source_file_path.name,
+            batch_count,
+            f"{row_count_before:,}",
+        )
 
         inconsistent_group_count = int(
             connection.execute(
@@ -869,6 +912,15 @@ def transform_csv_file(
             )
         }
 
+        raw_measure_total_differences = {
+            column: round(
+                measure_totals_after[column]
+                - measure_totals_before[column],
+                10,
+            )
+            for column in measure_columns
+        }
+
         (
             measure_total_differences,
             totals_preserved,
@@ -890,6 +942,11 @@ def transform_csv_file(
             for column in header
         )
 
+        logging.info(
+            "%s | escribiendo CSV consolidado | filas=%s",
+            source_file_path.name,
+            f"{row_count_after_consolidation:,}",
+        )
         cursor = connection.execute(
             f"""
             SELECT {output_column_expression}
@@ -897,6 +954,9 @@ def transform_csv_file(
             ORDER BY first_row_number
             """
         )
+
+        rows_written = 0
+        next_output_log = OUTPUT_PROGRESS_ROW_INTERVAL
 
         with output_file_path.open(
             "w",
@@ -913,6 +973,24 @@ def transform_csv_file(
                     break
 
                 writer.writerows(rows)
+                rows_written += len(rows)
+
+                if rows_written >= next_output_log:
+                    logging.info(
+                        "%s | filas escritas=%s",
+                        source_file_path.name,
+                        f"{rows_written:,}",
+                    )
+
+                    next_output_log += (
+                        OUTPUT_PROGRESS_ROW_INTERVAL
+                    )
+
+        logging.info(
+            "%s | escritura terminada | filas=%s",
+            source_file_path.name,
+            f"{rows_written:,}",
+        )
 
         unique_full_row_count = (
             row_count_before
@@ -939,6 +1017,7 @@ def transform_csv_file(
                 - row_count_after_consolidation
             ),
             "batch_count": batch_count,
+            "rows_written": rows_written,
             "key_column_count": len(key_columns),
             "measure_column_count": len(
                 measure_columns
@@ -951,6 +1030,9 @@ def transform_csv_file(
             ),
             "measure_totals_after": (
                 measure_totals_after
+            ),
+            "raw_measure_total_differences": (
+                raw_measure_total_differences
             ),
             "measure_total_differences": (
                 measure_total_differences

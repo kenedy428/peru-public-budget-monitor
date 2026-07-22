@@ -7,6 +7,7 @@ import pytest
 import json
 from pathlib import Path
 from src.transform import (
+    compare_measure_totals,
     consolidate_dataframe,
     identify_measure_columns,
     transform_source,
@@ -236,6 +237,7 @@ def test_transform_csv_file_consolidates_across_chunks(
         consolidated_a["MONTO_CERTIFICADO_ANUAL"]
         == 80
     )
+    assert report["rows_written"] == 3
 
 def test_transform_source_writes_output_and_report(
     tmp_path: Path,
@@ -313,3 +315,20 @@ def test_transform_source_writes_output_and_report(
         ]
         == 80
     )
+
+def test_compare_measure_totals_uses_currency_precision() -> None:
+    """Debe ignorar ruido técnico inferior a un céntimo."""
+    differences, totals_preserved = compare_measure_totals(
+        totals_before={
+            "MONTO_PIM": 1_000_000.004,
+        },
+        totals_after={
+            "MONTO_PIM": 999_999.996,
+        },
+        tolerance=0.01,
+    )
+
+    assert differences == {
+        "MONTO_PIM": 0.0,
+    }
+    assert totals_preserved is True
