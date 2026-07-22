@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-
+import json
+from pathlib import Path
 from src.transform import (
     consolidate_dataframe,
     identify_measure_columns,
+    transform_source,
 )
 
 
@@ -232,5 +234,82 @@ def test_transform_csv_file_consolidates_across_chunks(
     assert consolidated_a["MONTO_PIM"] == 100
     assert (
         consolidated_a["MONTO_CERTIFICADO_ANUAL"]
+        == 80
+    )
+
+def test_transform_source_writes_output_and_report(
+    tmp_path: Path,
+) -> None:
+    """Debe generar el CSV consolidado y su reporte JSON."""
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    raw_dir.mkdir()
+
+    source_path = raw_dir / "sample.csv"
+
+    source_path.write_text(
+        (
+            "KEY,DESCRIPTION,"
+            "MONTO_PIM,MONTO_CERTIFICADO_ANUAL\n"
+            "A,Registro A,100,0\n"
+            "A,Registro A,0,80\n"
+        ),
+        encoding="utf-8",
+    )
+
+    source = {
+        "source_id": "test_source",
+        "resource_name": "sample.csv",
+        "reference_year": 2026,
+        "encoding": "utf-8",
+    }
+
+    report, report_path = transform_source(
+        source=source,
+        raw_data_dir=raw_dir,
+        processed_dir=processed_dir,
+        chunk_rows=1,
+        reconciliation_tolerance=0.01,
+        key_columns=("KEY",),
+    )
+
+    output_path = Path(
+        report["output_file_path"]
+    )
+
+    assert output_path.exists()
+    assert report_path.exists()
+
+    assert report["source_id"] == "test_source"
+    assert report["reference_year"] == 2026
+    assert report["row_count_before"] == 2
+    assert (
+        report["row_count_after_consolidation"]
+        == 1
+    )
+    assert report["rows_consolidated"] == 1
+    assert report["totals_preserved"] is True
+
+    stored_report = json.loads(
+        report_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert stored_report["source_id"] == "test_source"
+    assert stored_report["totals_preserved"] is True
+
+    processed = pd.read_csv(
+        output_path,
+        encoding="utf-8",
+    )
+
+    assert len(processed) == 1
+    assert processed.iloc[0]["MONTO_PIM"] == 100
+    assert (
+        processed.iloc[0][
+            "MONTO_CERTIFICADO_ANUAL"
+        ]
         == 80
     )

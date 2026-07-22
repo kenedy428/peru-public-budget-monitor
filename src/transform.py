@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
+import json
+import logging
 import os
 import sqlite3
+import sys
 import tempfile
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +19,12 @@ import pandas as pd
 
 from src.analyze_grain import BUSINESS_KEY_V1
 from src.check_duplicates import calculate_values_hash
+from src.extract import (
+    DEFAULT_CONFIG_PATH,
+    PROJECT_ROOT,
+    load_config,
+)
+from src.profile_sources import select_sources
 
 
 DEFAULT_RECONCILIATION_TOLERANCE = 0.01
@@ -957,3 +968,256 @@ def transform_csv_file(
         database_path.unlink(
             missing_ok=True
         )
+
+def configure_logging() -> None:
+    """Configura los mensajes mostrados en consola."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+def write_transform_report(
+    report: dict[str, Any],
+    processed_dir: Path,
+) -> Path:
+    """Guarda el reporte de transformación en formato JSON."""
+    processed_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    timestamp = datetime.now(UTC).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    report_path = (
+        processed_dir
+        / (
+            f"{timestamp}_{report['source_id']}"
+            "_transform_report.json"
+        )
+    )
+
+    report_path.write_text(
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    return report_path
+
+
+def transform_source(
+    source: dict[str, Any],
+    raw_data_dir: Path,
+    processed_dir: Path,
+    chunk_rows: int,
+    reconciliation_tolerance: float,
+    key_columns: Sequence[str] = BUSINESS_KEY_V1,
+) -> tuple[dict[str, Any], Path]:
+    """Transforma una fuente configurada y genera su reporte."""
+    source_id = source["source_id"]
+    resource_name = source["resource_name"]
+    reference_year = source.get("reference_year")
+    encoding = source.get(
+        "encoding",
+        "utf-8-sig",
+    )
+
+    source_file_path = (
+        raw_data_dir
+        / resource_name
+    )
+
+    processed_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_file_path = (
+        processed_dir
+        / f"{source_id}_consolidated.csv"
+    )
+
+    logging.info(
+        "Transformando %s en bloques de %s filas.",
+        resource_name,
+        f"{chunk_rows:,}",
+    )
+
+    report = transform_csv_file(
+        source_file_path=source_file_path,
+        output_file_path=output_file_path,
+        encoding=encoding,
+        key_columns=key_columns,
+        chunk_rows=chunk_rows,
+        reconciliation_tolerance=(
+            reconciliation_tolerance
+        ),
+        temporary_directory=processed_dir,
+    )
+
+    report.update(
+        {
+            "source_id": source_id,
+            "resource_name": resource_name,
+            "reference_year": reference_year,
+            "encoding": encoding,
+            "transformed_at_utc": (
+                datetime.now(UTC).isoformat()
+            ),
+            "transformation_version": "0.1.0",
+        }
+    )
+
+    report_path = write_transform_report(
+        report=report,
+        processed_dir=processed_dir,
+    )
+
+    return report, report_path
+
+
+def parse_arguments() -> argparse.Namespace:
+    """Define los argumentos de línea de comandos."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Transforma y consolida las fuentes "
+            "presupuestales oficiales del MEF."
+        )
+    )
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Ruta del archivo YAML de configuración.",
+    )
+
+    parser.add_argument(
+        "--source-id",
+        help="Identificador de una fuente de datos.",
+    )
+
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Transforma las fuentes 2024, 2025 y 2026.",
+    )
+
+    parser.add_argument(
+        "--chunk-rows",
+        type=int,
+        default=DEFAULT_FILE_CHUNK_ROWS,
+        help="Cantidad de filas procesadas por bloque.",
+    )
+
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_RECONCILIATION_TOLERANCE,
+        help=(
+            "Tolerancia para comparar los totales "
+            "monetarios."
+        ),
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Punto de entrada de la transformación."""
+    configure_logging()
+    args = parse_arguments()
+
+    try:
+        config = load_config(
+            args.config
+        )
+
+        raw_data_dir = (
+            PROJECT_ROOT
+            / config["project"]["raw_data_dir"]
+        )
+
+        processed_dir = (
+            PROJECT_ROOT
+            / "data"
+            / "processed"
+        )
+
+        sources = select_sources(
+            config=config,
+            source_id=args.source_id,
+            profile_all=args.all,
+        )
+
+        for source in sources:
+            report, report_path = transform_source(
+                source=source,
+                raw_data_dir=raw_data_dir,
+                processed_dir=processed_dir,
+                chunk_rows=args.chunk_rows,
+                reconciliation_tolerance=(
+                    args.tolerance
+                ),
+            )
+
+            logging.info(
+                "%s | filas originales=%s | "
+                "filas consolidadas=%s | "
+                "duplicados exactos=%s | "
+                "filas agrupadas=%s",
+                report["source_id"],
+                f"{report['row_count_before']:,}",
+                (
+                    f"{report[
+                        'row_count_after_consolidation'
+                    ]:,}"
+                ),
+                (
+                    f"{report[
+                        'exact_duplicate_rows_removed'
+                    ]:,}"
+                ),
+                f"{report['rows_consolidated']:,}",
+            )
+
+            logging.info(
+                "%s | totales preservados=%s",
+                report["source_id"],
+                report["totals_preserved"],
+            )
+
+            logging.info(
+                "Archivo procesado: %s",
+                report["output_file_path"],
+            )
+
+            logging.info(
+                "Reporte generado: %s",
+                report_path,
+            )
+
+        logging.info(
+            "Transformación finalizada correctamente."
+        )
+
+        return 0
+
+    except Exception as error:
+        logging.exception(
+            "La transformación falló: %s",
+            error,
+        )
+
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
