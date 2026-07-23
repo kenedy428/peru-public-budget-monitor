@@ -247,14 +247,52 @@ CREATE TABLE IF NOT EXISTS analytics.dim_departamento_meta (
         PRIMARY KEY,
 
     departamento_meta TEXT NOT NULL,
-    departamento_meta_nombre TEXT NOT NULL,
+
+    -- Valor original proporcionado por la fuente.
+    -- Puede ser nulo cuando departamento_meta = '0'.
+    departamento_meta_nombre TEXT,
+
+    -- Etiqueta destinada al consumo analítico y Power BI.
+    departamento_meta_nombre_analitico TEXT
+        GENERATED ALWAYS AS (
+            COALESCE(
+                departamento_meta_nombre,
+                'NO ESPECIFICADO'
+            )
+        ) STORED,
 
     CONSTRAINT uq_dim_departamento_meta_natural
         UNIQUE (departamento_meta)
 );
 
+-- Permite actualizar una tabla creada con una versión anterior
+-- del DDL sin tener que eliminarla manualmente.
+ALTER TABLE analytics.dim_departamento_meta
+    ALTER COLUMN departamento_meta_nombre
+    DROP NOT NULL;
+
+ALTER TABLE analytics.dim_departamento_meta
+    ADD COLUMN IF NOT EXISTS
+        departamento_meta_nombre_analitico TEXT
+        GENERATED ALWAYS AS (
+            COALESCE(
+                departamento_meta_nombre,
+                'NO ESPECIFICADO'
+            )
+        ) STORED;
+
 COMMENT ON TABLE analytics.dim_departamento_meta IS
     'Departamento donde se ejecuta la meta presupuestaria.';
+
+COMMENT ON COLUMN
+    analytics.dim_departamento_meta.departamento_meta_nombre
+IS
+    'Nombre original de la fuente; puede ser nulo para el código 0.';
+
+COMMENT ON COLUMN
+    analytics.dim_departamento_meta.departamento_meta_nombre_analitico
+IS
+    'Etiqueta analítica derivada; sustituye nombres nulos por NO ESPECIFICADO.';
 
 -- ============================================================
 -- Tabla de hechos

@@ -88,6 +88,44 @@ BEGIN
 END;
 $$;
 
+\echo '4.1. Tratamiento del departamento de la meta'
+
+DO $$
+DECLARE
+    source_name_nullable TEXT;
+    analytical_name_generated TEXT;
+BEGIN
+    SELECT
+        is_nullable
+    INTO source_name_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'analytics'
+      AND table_name = 'dim_departamento_meta'
+      AND column_name = 'departamento_meta_nombre';
+
+    SELECT
+        is_generated
+    INTO analytical_name_generated
+    FROM information_schema.columns
+    WHERE table_schema = 'analytics'
+      AND table_name = 'dim_departamento_meta'
+      AND column_name = 'departamento_meta_nombre_analitico';
+
+    IF source_name_nullable <> 'YES' THEN
+        RAISE EXCEPTION
+            'departamento_meta_nombre debe permitir nulos.';
+    END IF;
+
+    IF analytical_name_generated <> 'ALWAYS' THEN
+        RAISE EXCEPTION
+            'departamento_meta_nombre_analitico debe ser una columna generada.';
+    END IF;
+
+    RAISE NOTICE
+        'El nombre original admite nulos y la etiqueta analítica es generada.';
+END;
+$$;
+
 \echo '5. Claves primarias'
 
 SELECT
