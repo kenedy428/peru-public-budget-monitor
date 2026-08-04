@@ -93,3 +93,5 @@ data/profiling/*
 # ==============================
 data/quality/*
 !data/quality/README.md
+# Power BI Desktop
+*.pbix

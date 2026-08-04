@@ -1,107 +1,85 @@
 # Peru Public Budget Monitor
 
-Proyecto personal de portafolio orientado al análisis de la ejecución presupuestal pública del Perú mediante datos oficiales del Ministerio de Economía y Finanzas (MEF).
+Proyecto analítico end-to-end para el seguimiento de la ejecución presupuestaria pública del Perú a partir de datos oficiales del Ministerio de Economía y Finanzas (MEF).
 
-El objetivo es construir una solución analítica end-to-end que permita extraer, validar, transformar, almacenar, analizar y visualizar datos de gasto público mediante un proceso reproducible, trazable y documentado.
+La solución integra ingesta reproducible, controles de calidad, transformación, almacenamiento en PostgreSQL, modelado dimensional, validaciones SQL y visualización interactiva en Power BI.
 
 ## Estado del proyecto
 
-> En desarrollo.
+> **Versión 1.0 finalizada.**
 
-Actualmente, el proyecto cuenta con:
+La solución implementada comprende:
 
-- definición del problema, usuarios objetivo y alcance del MVP;
-- investigación documentada de las fuentes oficiales del MEF;
-- configuración centralizada de los recursos 2024, 2025, 2026 y el diccionario de datos;
-- descarga reproducible de archivos mediante Python;
-- generación de manifiestos con metadatos y hashes SHA-256;
-- manejo de fuentes mutables y comparación de versiones;
-- reintentos automáticos ante errores temporales de red;
-- verificación de existencia, tamaño e integridad de los archivos;
-- pruebas unitarias automatizadas para los módulos de ingesta y verificación.
+- descarga reproducible de datos oficiales de 2024, 2025 y 2026;
+- registro de manifiestos, metadatos y hashes SHA-256;
+- verificación de integridad de archivos;
+- revisión del diccionario oficial de 73 variables;
+- transformación y consolidación mediante Python;
+- almacenamiento de staging en PostgreSQL;
+- modelo dimensional con una tabla de hechos y ocho dimensiones;
+- reconciliación exacta de importes entre archivos procesados y PostgreSQL;
+- pruebas automatizadas;
+- dashboard de siete páginas en Power BI;
+- documentación técnica y funcional.
 
-La siguiente etapa corresponde al perfilado estructural y de calidad de los datasets descargados.
+El archivo correspondiente a 2026 utilizado en esta versión fue descargado y verificado el **18/07/2026, hora de Perú**.
+
+---
+
+## Vista previa
+
+![Resumen ejecutivo](docs/images/dashboard/01_resumen_ejecutivo.png)
+
+La descripción completa de las páginas, indicadores y controles del informe se encuentra en:
+
+[Documentación del dashboard de Power BI](docs/power_bi_dashboard.md)
+
+---
 
 ## Objetivo
 
-Construir un pipeline analítico reproducible que transforme datos oficiales de ejecución presupuestal pública en información confiable y útil para:
+Transformar datos oficiales de ejecución presupuestaria en información confiable y útil para:
 
-- analizar la evolución temporal del monto devengado;
-- comparar niveles de gobierno, territorios y entidades;
-- identificar concentraciones, variaciones y cambios abruptos;
-- desarrollar KPIs reproducibles;
-- visualizar resultados mediante Power BI;
-- mantener trazabilidad entre las fuentes, transformaciones y resultados;
-- implementar controles de calidad y validaciones automatizadas.
+- analizar el presupuesto inicial y el presupuesto vigente;
+- evaluar certificación, compromiso, devengado y girado;
+- comparar niveles de gobierno;
+- analizar entidades y unidades ejecutoras;
+- identificar concentraciones presupuestarias;
+- estudiar funciones y estructura programática;
+- comparar departamentos;
+- analizar fuentes de financiamiento y tipos de gasto;
+- explorar geográficamente la ubicación de las unidades ejecutoras;
+- mantener trazabilidad entre fuentes, transformaciones y resultados.
 
-El MVP permitirá analizar los años completos 2024 y 2025, así como el comportamiento de 2026 hasta el último periodo mensual disponible.
+---
 
-Las comparaciones que involucren 2026 se realizarán mediante periodos equivalentes YTD para evitar comparar un año en curso contra años completos.
-
-## Usuarios objetivo
-
-La solución está dirigida principalmente a:
-
-- analistas de presupuesto y planeamiento;
-- equipos de control interno y auditoría;
-- investigadores y periodistas de datos;
-- ciudadanos interesados en el seguimiento del gasto público;
-- reclutadores técnicos interesados en verificar competencias de Data Analytics, Python, SQL, Business Intelligence y Data Engineering.
-
-## Alcance del MVP
-
-El MVP contempla:
-
-- datos mensuales de ejecución presupuestal de 2024 y 2025;
-- datos de 2026 hasta el último periodo mensual disponible;
-- comparaciones YTD entre 2026 y periodos equivalentes de 2025 y 2024;
-- ingesta reproducible mediante Python;
-- registro de metadatos y hashes SHA-256;
-- perfilado y validación de calidad;
-- transformación mediante pandas;
-- almacenamiento relacional en PostgreSQL;
-- modelado dimensional;
-- análisis mediante SQL;
-- Análisis Exploratorio de Datos (EDA);
-- definición de KPIs;
-- dashboard en Power BI;
-- validaciones mediante Excel;
-- pruebas automatizadas;
-- documentación técnica y funcional en GitHub.
-
-El alcance podrá ajustarse después de completar el perfilado del diccionario oficial y de los archivos correspondientes a cada periodo.
-
-## Arquitectura propuesta
-
-El flujo general previsto es:
+## Arquitectura
 
 ```text
-Fuente oficial MEF
+Datos abiertos del MEF
         ↓
 Configuración de fuentes
         ↓
 Extracción reproducible con Python
         ↓
-Registro de metadatos y hashes
+Manifiestos y hashes SHA-256
         ↓
 Verificación de integridad
         ↓
 Perfilado y controles de calidad
         ↓
-Transformación con pandas
+Transformación y consolidación
         ↓
-PostgreSQL
+PostgreSQL: esquema staging
         ↓
-Modelo dimensional y SQL analítico
+PostgreSQL: modelo dimensional analytics
         ↓
-EDA y KPIs
+Validaciones y reconciliación SQL
         ↓
-Power BI y Excel QA
-        ↓
-Automatización y documentación
+Power BI
 ```
 
-La arquitectura podrá modificarse de acuerdo con las características reales de los datos y las decisiones técnicas documentadas durante el desarrollo.
+---
 
 ## Fuentes de datos
 
@@ -111,9 +89,7 @@ La fuente principal es el conjunto oficial:
 
 Publicado por el Ministerio de Economía y Finanzas del Perú.
 
-El MVP utiliza los siguientes recursos:
-
-| Periodo | Recurso |
+| Año | Recurso |
 |---|---|
 | 2024 | `2024-Gasto-Devengado.csv` |
 | 2025 | `2025-Gasto-Devengado-Mensual.csv` |
@@ -122,98 +98,154 @@ El MVP utiliza los siguientes recursos:
 
 Los archivos originales no se versionan en GitHub debido a su tamaño. Pueden reproducirse mediante el proceso de ingesta documentado en el repositorio.
 
+---
+
+## Volumen procesado
+
+| Año | Registros |
+|---|---:|
+| 2024 | 2,789,605 |
+| 2025 | 2,807,021 |
+| 2026 | 2,101,614 |
+| **Total** | **7,698,240** |
+
+Los datos consolidados contienen:
+
+- 73 columnas documentadas;
+- 18 medidas monetarias;
+- valores monetarios almacenados como `NUMERIC(24,2)`;
+- reconciliación exacta de 54 totales monetarios;
+- diferencia máxima entre archivos procesados y PostgreSQL: `0.00`.
+
+---
+
+## Modelo dimensional
+
+Power BI consume el esquema `analytics` de PostgreSQL y no la tabla de staging directamente.
+
+El modelo está compuesto por:
+
+| Tabla | Registros |
+|---|---:|
+| `analytics.fact_ejecucion_presupuestal` | 7,698,240 |
+| `analytics.dim_tiempo` | 3 |
+| `analytics.dim_institucion` | 8,602 |
+| `analytics.dim_meta_presupuestaria` | 790,865 |
+| `analytics.dim_funcional` | 387 |
+| `analytics.dim_financiamiento` | 175 |
+| `analytics.dim_clasificador_gasto` | 1,602 |
+| `analytics.dim_ubicacion_ejecutora` | 1,892 |
+| `analytics.dim_departamento_meta` | 27 |
+
+![Modelo dimensional](docs/images/dashboard/08_modelo_dimensional.png)
+
+Las decisiones sobre claves, relaciones y versionamiento anual están documentadas en:
+
+- [Diseño del modelo analítico](docs/analytics_model_design.md)
+- [Revisión del diccionario oficial](docs/data_dictionary_review.md)
+- [Grano y claves](docs/grain_and_key.md)
+
+---
+
+## Dashboard de Power BI
+
+La versión final contiene siete páginas.
+
+### 1. Resumen ejecutivo
+
+Indicadores principales, evolución anual y comparación por nivel de gobierno.
+
+### 2. Proceso de ejecución presupuestaria
+
+Seguimiento desde el PIA hasta la fase de girado.
+
+### 3. Análisis institucional
+
+Ranking y detalle de entidades y unidades ejecutoras.
+
+### 4. Análisis funcional y programático
+
+Distribución por función y descomposición de la estructura programática.
+
+### 5. Análisis territorial
+
+Comparación presupuestaria entre departamentos.
+
+### 6. Financiamiento y tipo de gasto
+
+Análisis del origen de los recursos y de la composición del gasto.
+
+### 7. Explorador geográfico
+
+Navegación por departamento, provincia y distrito mediante Azure Maps.
+
+Las capturas de todas las páginas se encuentran en:
+
+```text
+docs/images/dashboard/
+```
+
+---
+
+## Indicadores principales
+
+### PIA
+
+Presupuesto Institucional de Apertura aprobado al inicio del año fiscal.
+
+### PIM
+
+Presupuesto Institucional Modificado vigente después de las modificaciones presupuestarias.
+
+### Certificado
+
+Monto reservado para respaldar una futura obligación.
+
+### Comprometido
+
+Monto asociado a obligaciones formalmente asumidas.
+
+### Devengado
+
+Monto correspondiente a obligaciones reconocidas después de verificar la recepción del bien, servicio u otra condición aplicable.
+
+### Girado
+
+Monto para el cual se ha emitido la orden de pago.
+
+### Porcentaje de ejecución
+
+```DAX
+% Ejecución =
+DIVIDE ( [Devengado], [PIM], 0 )
+```
+
+### Saldo por ejecutar
+
+```DAX
+Saldo por ejecutar =
+[PIM] - [Devengado]
+```
+
+---
+
 ## Stack tecnológico
 
-### Implementado
-
 - Python 3.12
+- pandas
 - requests
 - PyYAML
 - pytest
+- PostgreSQL 18
+- SQL
+- Power BI Desktop
+- Azure Maps
 - Git
 - GitHub
 
-### Previsto para las siguientes etapas
+---
 
-- pandas
-- Jupyter Notebook
-- PostgreSQL
-- SQL
-- Power BI
-- Excel
-
-Las herramientas se incorporan únicamente cuando tienen una responsabilidad concreta dentro de la solución.
-
-## Funcionalidades implementadas
-
-### Configuración de fuentes
-
-Las URLs, Resource IDs, nombres de archivos, codificaciones y condiciones de mutabilidad se encuentran centralizadas en:
-
-```text
-config/sources.yaml
-```
-
-### Ingesta reproducible
-
-El módulo:
-
-```text
-src/extract.py
-```
-
-permite:
-
-- descargar una fuente específica o todos los recursos;
-- descargar los archivos por bloques sin cargarlos completamente en memoria;
-- utilizar archivos temporales `.part`;
-- validar respuestas vacías, incompletas o HTML;
-- calcular hashes SHA-256;
-- registrar manifiestos JSON;
-- manejar fuentes mutables;
-- comparar versiones anteriores y actuales;
-- aplicar reintentos ante errores HTTP temporales;
-- registrar manifiestos de error cuando una descarga falla.
-
-### Verificación de integridad
-
-El módulo:
-
-```text
-src/verify_sources.py
-```
-
-permite comprobar:
-
-- existencia del archivo local;
-- coincidencia del tamaño;
-- coincidencia del hash SHA-256;
-- validez del manifiesto más reciente;
-- posibles modificaciones o daños posteriores a la descarga.
-
-### Pruebas automatizadas
-
-Las pruebas se encuentran en:
-
-```text
-tests/
-```
-
-Actualmente validan:
-
-- cálculo de SHA-256;
-- detección de archivos vacíos;
-- detección de descargas incompletas;
-- rechazo de respuestas HTML;
-- selección de fuentes;
-- configuración de reintentos HTTP;
-- tratamiento de fuentes mutables;
-- clasificación de estados;
-- selección del manifiesto más reciente;
-- detección de archivos ausentes;
-- detección de modificaciones mediante hash.
-
-## Estructura actual del repositorio
+## Estructura del repositorio
 
 ```text
 peru-public-budget-monitor/
@@ -221,30 +253,43 @@ peru-public-budget-monitor/
 │   └── sources.yaml
 ├── data/
 │   ├── manifests/
-│   │   └── README.md
+│   ├── processed/
 │   └── raw/
-│       └── README.md
 ├── docs/
 │   ├── decisions/
-│   │   └── 001-data-access-strategy.md
+│   ├── images/
+│   │   └── dashboard/
+│   ├── analytics_model_design.md
+│   ├── data_dictionary_review.md
+│   ├── data_quality.md
 │   ├── data_sources.md
+│   ├── grain_and_key.md
 │   ├── ingestion.md
-│   └── project_scope.md
+│   ├── postgresql_staging.md
+│   ├── power_bi_dashboard.md
+│   ├── profiling.md
+│   ├── project_scope.md
+│   └── transformation.md
+├── scripts/
+│   └── psql_project.sh
+├── sql/
+│   ├── 001_*.sql
+│   ├── ...
+│   └── 015_finalize_analytics_model.sql
 ├── src/
-│   ├── __init__.py
-│   ├── extract.py
-│   └── verify_sources.py
 ├── tests/
-│   ├── test_extract.py
-│   └── test_verify_sources.py
+├── .env.example
+├── .gitattributes
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-Los archivos descargados y los manifiestos generados se mantienen localmente y están excluidos mediante `.gitignore`.
+Los archivos originales, archivos procesados, credenciales y archivos `.pbix` están excluidos del historial Git.
 
-## Ejecución
+---
+
+## Instalación local
 
 ### Crear el entorno virtual
 
@@ -264,112 +309,98 @@ source .venv/Scripts/activate
 python -m pip install -r requirements.txt
 ```
 
-### Descargar todas las fuentes
+### Configurar PostgreSQL
+
+Copia el archivo de ejemplo:
 
 ```bash
-python -m src.extract --all
+cp .env.example .env
 ```
 
-### Verificar rápidamente los archivos
+Completa las credenciales locales en `.env`.
+
+Para conectarte mediante el helper del proyecto:
 
 ```bash
-python -m src.verify_sources --quick
+./scripts/psql_project.sh
 ```
 
-### Verificar tamaño y hash
+Las instrucciones detalladas se encuentran en:
 
-```bash
-python -m src.verify_sources
-```
+- [Ingesta](docs/ingestion.md)
+- [Transformación](docs/transformation.md)
+- [Staging en PostgreSQL](docs/postgresql_staging.md)
+- [Calidad de datos](docs/data_quality.md)
 
-### Ejecutar las pruebas
+---
+
+## Pruebas automatizadas
+
+Ejecuta:
 
 ```bash
 python -m pytest -v
 ```
 
-Las instrucciones completas se encuentran en `docs/ingestion.md`.
+La suite valida, entre otros aspectos:
 
-## Estados de ingesta
+- cálculo de hashes SHA-256;
+- archivos vacíos o incompletos;
+- respuestas HTML no válidas;
+- selección de fuentes;
+- reintentos HTTP;
+- fuentes mutables;
+- manifiestos;
+- integridad de archivos;
+- reglas de transformación;
+- consistencia de esquemas.
 
-Los manifiestos pueden registrar los siguientes estados:
+---
 
-| Estado | Significado |
-|---|---|
-| `success` | El archivo no existía y fue descargado correctamente |
-| `updated` | El archivo existía y la versión oficial cambió |
-| `unchanged` | La fuente mutable fue revisada y su contenido no cambió |
-| `refreshed` | La descarga fue forzada, aunque el contenido era idéntico |
-| `skipped_existing` | Se conservó una fuente inmutable ya existente |
-| `failed` | La descarga no pudo completarse |
+## Distribución de Power BI
 
-## Documentación
+El archivo `.pbix` no se almacena dentro del historial Git debido a su tamaño y naturaleza binaria.
 
-La definición del problema, los usuarios objetivo, las preguntas de negocio y el alcance del MVP se encuentran en:
+La versión final se distribuirá como archivo adjunto de una GitHub Release:
 
-- `docs/project_scope.md`
+```text
+peru_public_budget_monitor_final.pbix
+```
 
-La investigación de las fuentes oficiales del MEF se encuentra en:
+La versión de desarrollo se mantiene localmente:
 
-- `docs/data_sources.md`
+```text
+peru_public_budget_monitor_desarrollo.pbix
+```
 
-La decisión técnica sobre el uso de descarga directa y API se encuentra en:
+---
 
-- `docs/decisions/001-data-access-strategy.md`
+## Consideraciones de interpretación
 
-Las instrucciones para preparar el entorno, descargar las fuentes y verificar su integridad se encuentran en:
+- El año 2026 corresponde a un año en curso.
+- La fecha registrada corresponde a la descarga y verificación del archivo, no necesariamente a la última actualización interna realizada por el MEF.
+- El porcentaje de ejecución financiera se calcula como `Devengado / PIM`.
+- La ubicación territorial corresponde a la ubicación de la unidad ejecutora y no necesariamente al destino físico final del gasto.
+- Los números de los clústeres del mapa representan ubicaciones agrupadas y no montos presupuestarios.
 
-- `docs/ingestion.md`
+---
 
-La metodología, los comandos y los resultados del perfilado estructural se encuentran en:
+## Alcance temporal
 
-- `docs/profiling.md`
+La fuente contiene doce columnas mensuales de Devengado. Sin embargo, el modelo dimensional implementado en esta versión utiliza un grano analítico anual.
 
-## Principios del proyecto
+Por tanto, el dashboard actual compara 2024, 2025 y 2026 mediante valores anuales acumulados al corte disponible.
 
-- No inventar variables que no existan en la fuente oficial.
-- No definir KPIs definitivos antes de revisar el diccionario y las columnas reales.
-- No confundir monto devengado con porcentaje de ejecución presupuestal.
-- No comparar un año incompleto contra años completos.
-- No presentar patrones atípicos como evidencia de corrupción, irregularidad o ineficiencia.
-- Mantener trazabilidad entre la fuente, las transformaciones y los resultados.
-- No versionar credenciales, secretos ni datasets masivos.
-- Documentar decisiones técnicas, limitaciones y supuestos.
-- Priorizar reproducibilidad y calidad antes que complejidad innecesaria.
+---
 
-## Próximos pasos
+## Trabajo futuro
 
-1. Realizar el perfilado inicial de los archivos 2024, 2025 y 2026.
-2. Comparar nombres, orden, tipos y cantidad de columnas entre periodos.
-3. Contrastar las columnas reales con el diccionario oficial.
-4. Identificar el último mes con información disponible en 2026.
-5. Determinar el grano real del dataset.
-6. Definir las primeras reglas de calidad.
-7. Diseñar la capa de transformación y el modelo analítico inicial.
-8. Preparar la carga hacia PostgreSQL.
+La principal ampliación prevista consiste en normalizar las doce columnas mensuales de Devengado mediante una tabla de hechos mensual.
 
-## Cautelas analíticas
+Esto permitirá:
 
-El proyecto tendrá un enfoque descriptivo y diagnóstico.
-
-Por tanto:
-
-- un bajo nivel de devengado no demuestra ineficiencia;
-- un pico de gasto no implica una irregularidad;
-- una alerta analítica representa un patrón que requiere contexto adicional;
-- una correlación no deberá presentarse como causalidad;
-- las conclusiones deberán mantenerse dentro de las variables y granularidad disponibles en la fuente oficial.
-
-## Autor
-
-Proyecto personal de portafolio desarrollado como evidencia de competencias en:
-
-- Data Analytics;
-- Python;
-- SQL;
-- Business Intelligence;
-- modelado de datos;
-- automatización;
-- calidad de datos;
-- documentación técnica;
-- Git y GitHub.
+- evolución mes a mes;
+- comparaciones YTD entre periodos equivalentes;
+- análisis de estacionalidad;
+- seguimiento del avance acumulado;
+- detección de concentración del gasto al cierre del año.
